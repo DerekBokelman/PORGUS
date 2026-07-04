@@ -13,14 +13,14 @@ defaults:
   temperature: 0.6
   compressionStyle: caveman
   respondsWhen: mentioned-or-relevant
-  cooldownMs: 2000
+  cooldownMs: 400
 
 budget:
   dailyRealCallLimit: 200
 
 coordination:
-  maxConsecutiveAgentTurns: 2
-  responseDelayMs: 200
+  maxConsecutiveAgentTurns: 5
+  responseDelayMs: 0
   maxResponsesPerMessage: 1
   recentMessageLimit: 12
 

@@ -16,14 +16,14 @@ describe("AgentRegistry", () => {
     ]);
     expect(agents).toHaveLength(5);
     expect(agents.every((agent) => agent.compressionStyle === "caveman")).toBe(true);
-    expect(registry.getRequired("architect").provider).toBe("gemini");
+    expect(registry.getRequired("architect").provider).toBe("openrouter");
     expect(registry.getRequired("auditor").provider).toBe("groq");
     expect(registry.getRequired("operator").provider).toBe("openrouter");
     expect(registry.getRequired("breeder").provider).toBe("groq");
     expect(registry.getRequired("chronicler").provider).toBe("ollama");
     expect(registry.getRequired("auditor").model).not.toBe(registry.getRequired("breeder").model);
     expect(registry.getRequired("auditor").temperature).toBe(0.2);
-    expect(registry.getBudget().dailyRealCallLimit).toBe(45);
+    expect(registry.getBudget().dailyRealCallLimit).toBe(200);
   });
 
   it("rejects duplicate agent ids", () => {

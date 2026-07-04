@@ -111,7 +111,7 @@ async function main() {
         channelId,
         busyIntervalMs: config.livingTickBusyMs,
         idleIntervalMs: config.livingTickIdleMs,
-        startDelayMs: 8000
+        startDelayMs: 1500
       });
       autonomousLoop.start();
     }

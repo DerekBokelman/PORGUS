@@ -1,5 +1,7 @@
-import "dotenv/config";
+import dotenv from "dotenv";
 import * as z from "zod";
+
+dotenv.config({ override: true });
 
 const envSchema = z
   .object({
@@ -10,10 +12,10 @@ const envSchema = z
       .string()
       .default("true")
       .transform((value) => value.toLowerCase() !== "false" && value !== "0"),
-    // Delay between work cycles while agents are actively working.
-    LIVING_TICK_MIN_MS: z.coerce.number().int().positive().default(5000),
+    // Delay between work cycles while agents are actively working (group-chat cadence).
+    LIVING_TICK_MIN_MS: z.coerce.number().int().positive().default(1500),
     // Backoff ceiling: delay between cycles once agents go idle (budget/rate-limited).
-    LIVING_TICK_MS: z.coerce.number().int().positive().default(180000)
+    LIVING_TICK_MS: z.coerce.number().int().positive().default(90000)
   });
 
 export type AppConfig = ReturnType<typeof loadConfig>;

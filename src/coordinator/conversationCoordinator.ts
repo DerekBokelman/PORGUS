@@ -224,11 +224,9 @@ export class ConversationCoordinator {
       });
 
       if (recorded) {
-        // Agent-to-agent chains are capped by maxConsecutiveAgentTurns; skip ping-pong on
-        // heartbeat-only "Done." status posts so the loop does not spin on tool errors.
-        const statusOnly = /^done\.?\s*(t-\d+)?/i.test(text.trim());
-        const fromHeartbeat = message.authorAgentId === "heartbeat";
-        if (!statusOnly && !fromHeartbeat) {
+        // Skip bare "Done. T-000xx" status posts — they caused tool-error ping-pong loops.
+        const statusOnly = /^done\.?\s*(t-\d+)?(\s*complete\.?)?$/i.test(text.trim());
+        if (!statusOnly) {
           await this.processMessage(recorded, responder);
         }
       }

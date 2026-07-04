@@ -15,9 +15,9 @@ export interface ProviderFactoryOptions {
 const PROVIDER_MIN_INTERVAL_MS: Record<ProviderName, number> = {
   mock: 0,
   gemini: 13000,
-  groq: 2000,
-  openrouter: 1500,
-  ollama: 200
+  groq: 600,
+  openrouter: 400,
+  ollama: 50
 };
 
 const PROVIDER_KEY_ENV: Partial<Record<ProviderName, string>> = {
