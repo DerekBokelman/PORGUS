@@ -5,22 +5,22 @@
 #   breeder    → Groq                llama-3.1-8b-instant     fast + different model than Auditor
 #   chronicler → Ollama (local)      llama3.2:3b              unlimited if Ollama running
 #
-# Agents speak in natural language (compressionStyle: normal). Set API keys in .env (see .env.example).
+# Agents always speak in caveman compression (compressionStyle: caveman). Set API keys in .env (see .env.example).
 
 defaults:
   provider: mock
   model: mock
   temperature: 0.6
-  compressionStyle: normal
+  compressionStyle: caveman
   respondsWhen: mentioned-or-relevant
-  cooldownMs: 20000
+  cooldownMs: 2000
 
 budget:
   dailyRealCallLimit: 45
 
 coordination:
-  maxConsecutiveAgentTurns: 5
-  responseDelayMs: 1500
+  maxConsecutiveAgentTurns: 6
+  responseDelayMs: 200
   maxResponsesPerMessage: 1
   recentMessageLimit: 12
 

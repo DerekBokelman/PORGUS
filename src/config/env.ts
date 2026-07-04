@@ -11,7 +11,7 @@ const envSchema = z
       .default("true")
       .transform((value) => value.toLowerCase() !== "false" && value !== "0"),
     // Delay between work cycles while agents are actively working.
-    LIVING_TICK_MIN_MS: z.coerce.number().int().positive().default(20000),
+    LIVING_TICK_MIN_MS: z.coerce.number().int().positive().default(5000),
     // Backoff ceiling: delay between cycles once agents go idle (budget/rate-limited).
     LIVING_TICK_MS: z.coerce.number().int().positive().default(180000)
   });

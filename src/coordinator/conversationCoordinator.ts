@@ -31,12 +31,17 @@ export interface AgentResponder {
   ): Promise<string[]>;
 }
 
+export interface AgentToolRunnerLike {
+  run(agent: AgentDefinition, rawText: string): Promise<string[]>;
+}
+
 export interface ConversationCoordinatorOptions {
   registry: AgentRegistry | CompositeAgentRegistry;
   memory: MemoryStore;
   budgetGuard: BudgetGuard;
   providerResolver: ProviderResolver;
   livingRuntime?: LivingCompanyRuntime;
+  toolRunner?: AgentToolRunnerLike;
 }
 
 export class ConversationCoordinator {
@@ -173,12 +178,15 @@ export class ConversationCoordinator {
           text = turn.responseText.trim();
         }
 
-        let toolNotes: string[] = [];
+        const toolNotes: string[] = [];
         if (responder.runAgentTools) {
-          toolNotes = await responder.runAgentTools(agent, rawText, message);
-          for (const note of toolNotes) {
-            console.log(`[tools] ${agent.id}: ${note}`);
-          }
+          toolNotes.push(...(await responder.runAgentTools(agent, rawText, message)));
+        }
+        if (this.options.toolRunner) {
+          toolNotes.push(...(await this.options.toolRunner.run(agent, rawText)));
+        }
+        for (const note of toolNotes) {
+          console.log(`[tools] ${agent.id}: ${note}`);
         }
 
         if (toolNotes.length > 0) {
@@ -293,8 +301,7 @@ export class ConversationCoordinator {
           `Your personality: ${agent.personality}`,
           "",
           "How to talk:",
-          "- Write like a real human teammate in Slack: clear, natural, complete sentences.",
-          "- Be concise but readable. No telegraphic fragments, no robotic filler, no repeating the prompt.",
+          talkStyle(agent),
           "- Actually do the work: give real analysis, decisions, numbers, or next steps — not vague chatter.",
           "- Build on what teammates just said. Reply as yourself, in your own voice.",
           compressionInstruction(agent),
@@ -316,7 +323,14 @@ export class ConversationCoordinator {
           "  [SLACK] action=bookmark channel=<id> title=<t> link=<url>",
           "  [SLACK] action=list_channels",
           "- Need a capability or tool you don't have yet? Ask for it with: [SLACK] action=request_capability name=<tool> reason=<why>",
-          "- Keep your written message natural; the tags are executed and summarized automatically.",
+          "",
+          "You also have research and memory tools. Add a [TOOL] tag on its own line when useful:",
+          "  [TOOL] name=web_search query=<what to look up>",
+          "  [TOOL] name=http_fetch url=<https url>",
+          "  [TOOL] name=remember title=<t> body=<fact to keep> category=lesson|strategy|protocol",
+          "  [TOOL] name=recall query=<topic>",
+          "  [TOOL] name=calc expr=<arithmetic>",
+          "- Keep your written message in your own voice; tags are executed and summarized automatically.",
           this.options.livingRuntime?.buildAgentContext(agent) ?? ""
         ]
           .filter(Boolean)
@@ -328,11 +342,18 @@ export class ConversationCoordinator {
           "Recent Slack conversation:",
           transcript || `${message.authorName}: ${message.text}`,
           "",
-          "Write your next Slack message as a natural, helpful teammate. Do the work — don't just describe it."
+          "Write your next Slack message in your style. Do the work — don't just describe it."
         ].join("\n")
       }
     ];
   }
+}
+
+function talkStyle(agent: AgentDefinition): string {
+  if (agent.compressionStyle === "caveman") {
+    return "- Talk like a smart caveman: terse, fast, no fluff. Fragments fine. Get to the point immediately.";
+  }
+  return "- Write like a real human teammate in Slack: clear, natural, complete sentences. No robotic filler.";
 }
 
 function compressionInstruction(agent: AgentDefinition): string {
@@ -341,10 +362,12 @@ function compressionInstruction(agent: AgentDefinition): string {
   }
 
   return [
-    "Use Caveman compression:",
-    "- Short fragments. No filler. No greetings. No sign-offs.",
-    "- Keep substance, decisions, risks, and next steps.",
-    "- Preserve code, commands, URLs, and exact errors byte-for-byte."
+    "Caveman compression, ALWAYS on:",
+    "- Drop articles (a/the), filler (just/really/basically), greetings, sign-offs.",
+    "- Short fragments. Pattern: [thing] [action] [reason]. [next step].",
+    "- Keep all substance: decisions, numbers, risks, next steps.",
+    "- Preserve code, commands, URLs, exact errors byte-for-byte.",
+    "- Never announce the style or add a normal-language recap."
   ].join("\n");
 }
 

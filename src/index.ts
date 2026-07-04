@@ -5,6 +5,7 @@ import { loadConfig } from "./config/env.js";
 import { ConversationCoordinator } from "./coordinator/conversationCoordinator.js";
 import { AutonomousLoop } from "./living/autonomousLoop.js";
 import { bootstrapLivingCompany } from "./living/bootstrap.js";
+import { AgentToolRunner } from "./tools/toolRunner.js";
 import { HeadcountManager } from "./living/headcount.js";
 import { LivingCompanyRuntime } from "./living/runtime.js";
 import { SqliteLivingStore } from "./living/sqliteLivingStore.js";
@@ -42,12 +43,14 @@ async function main() {
   const providerFactory = new ProviderFactory({
     fallbackToMock: process.env.FALLBACK_TO_MOCK === "true"
   });
+  const toolRunner = new AgentToolRunner(livingRuntime);
   const coordinator = new ConversationCoordinator({
     registry,
     memory,
     budgetGuard,
     providerResolver: providerFactory,
-    livingRuntime
+    livingRuntime,
+    toolRunner
   });
 
   let autonomousLoop: AutonomousLoop | undefined;

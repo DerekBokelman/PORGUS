@@ -39,6 +39,24 @@ export class LivingCompanyRuntime {
     return this.options.company.listOpenTasks().length > 0;
   }
 
+  /** Write to the company's long-term memory (backs the `remember` tool). */
+  remember(input: { key: string; category: import("./types.js").CuratedCategory; title: string; body: string }): void {
+    this.options.company.knowledge.upsertCurated(input);
+  }
+
+  /** Read curated memory, optionally filtered by a substring (backs `recall`). */
+  recall(query?: string): string {
+    const context = this.options.company.knowledge.curatedContext({ tokenBudget: 600 });
+    if (!query) {
+      return context;
+    }
+    const q = query.toLowerCase();
+    return context
+      .split("\n")
+      .filter((line) => line.toLowerCase().includes(q))
+      .join("\n");
+  }
+
   /**
    * Guarantee the company always has something concrete to work on. When the
    * queue is empty, open a low-priority self-improvement task for the Architect
