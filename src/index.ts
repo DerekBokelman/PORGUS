@@ -99,7 +99,8 @@ async function main() {
         coordinator,
         responder,
         channelId,
-        intervalMs: config.livingTickMs,
+        busyIntervalMs: config.livingTickBusyMs,
+        idleIntervalMs: config.livingTickIdleMs,
         startDelayMs: 8000
       });
       autonomousLoop.start();

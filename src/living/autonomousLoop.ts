@@ -5,36 +5,47 @@ export interface AutonomousLoopOptions {
   coordinator: ConversationCoordinator;
   responder: AgentResponder;
   channelId: string;
-  /** Milliseconds between work cycles. */
-  intervalMs: number;
+  /** Delay between cycles while agents are actively working. */
+  busyIntervalMs: number;
+  /** Maximum delay between cycles when agents are idle (backoff ceiling). */
+  idleIntervalMs: number;
   /** Optional short delay before the first tick (lets bots finish connecting). */
   startDelayMs?: number;
   log?: (message: string) => void;
 }
 
 /**
- * Drives the company without human input. On a fixed interval it asks the
- * ConversationCoordinator to run a heartbeat, which injects a synthetic work
- * cycle so agents claim tasks, execute, score, and grow on their own.
+ * Drives the company without human input using an adaptive cadence:
+ *  - When a cycle produces agent turns, run the next one quickly (busyIntervalMs).
+ *  - When a cycle is idle (0 turns — e.g. every agent is budget/rate-limited or
+ *    the kill switch is engaged), back off exponentially up to idleIntervalMs.
  *
- * Cost is bounded elsewhere: the budget guard caps real calls per agent per day
- * and the spend ledger enforces the human spend ceiling, so a stuck loop can
- * never run away.
+ * This goes as fast as the free tiers allow, then eases off automatically instead
+ * of hammering rate limits or burning the daily call budget on empty cycles.
+ *
+ * Cost is still hard-bounded elsewhere: the budget guard caps real calls per agent
+ * per day and the spend ledger enforces the human spend ceiling.
  */
 export class AutonomousLoop {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private running = false;
   private ticking = false;
+  private currentDelayMs: number;
 
-  constructor(private readonly options: AutonomousLoopOptions) {}
+  constructor(private readonly options: AutonomousLoopOptions) {
+    this.currentDelayMs = options.busyIntervalMs;
+  }
 
   start(): void {
     if (this.running) {
       return;
     }
     this.running = true;
-    const first = this.options.startDelayMs ?? this.options.intervalMs;
-    this.log(`Autonomous loop enabled: work cycle every ${Math.round(this.options.intervalMs / 1000)}s.`);
+    const first = this.options.startDelayMs ?? this.options.busyIntervalMs;
+    this.log(
+      `Autonomous loop enabled: ${Math.round(this.options.busyIntervalMs / 1000)}s while busy, ` +
+        `backing off to ${Math.round(this.options.idleIntervalMs / 1000)}s when idle.`
+    );
     this.schedule(first);
   }
 
@@ -46,20 +57,36 @@ export class AutonomousLoop {
     }
   }
 
-  /** Run a single work cycle now. Safe to call directly (used by tests). */
-  async tick(): Promise<void> {
+  /**
+   * Run a single work cycle now. Returns the delay (ms) that should precede the
+   * next cycle, based on whether this one produced work. Safe to call directly.
+   */
+  async tick(): Promise<number> {
     if (this.ticking) {
-      return;
+      return this.currentDelayMs;
     }
     this.ticking = true;
     try {
-      await this.options.coordinator.runHeartbeat(this.options.channelId, this.options.responder);
+      const turns = await this.options.coordinator.runHeartbeat(
+        this.options.channelId,
+        this.options.responder
+      );
+      if (turns > 0) {
+        this.currentDelayMs = this.options.busyIntervalMs;
+      } else {
+        this.currentDelayMs = Math.min(
+          this.options.idleIntervalMs,
+          Math.max(this.options.busyIntervalMs, this.currentDelayMs * 2)
+        );
+      }
     } catch (error) {
       const reason = error instanceof Error ? error.message : "unknown";
       this.log(`Work cycle skipped: ${reason}`);
+      this.currentDelayMs = this.options.idleIntervalMs;
     } finally {
       this.ticking = false;
     }
+    return this.currentDelayMs;
   }
 
   private schedule(delayMs: number): void {
@@ -67,7 +94,7 @@ export class AutonomousLoop {
       return;
     }
     this.timer = setTimeout(() => {
-      void this.tick().finally(() => this.schedule(this.options.intervalMs));
+      void this.tick().then((nextDelay) => this.schedule(nextDelay));
     }, delayMs);
     // Do not keep the process alive solely for the loop.
     if (typeof this.timer === "object" && this.timer && "unref" in this.timer) {

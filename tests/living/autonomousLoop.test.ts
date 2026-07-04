@@ -20,11 +20,13 @@ describe("AutonomousLoop", () => {
       coordinator: {
         async runHeartbeat(channelId: string, r: AgentResponder) {
           calls.push({ channelId, responder: r });
+          return 3;
         }
       } as unknown as ConversationCoordinator,
       responder,
       channelId: "C-TEST",
-      intervalMs: 1000
+      busyIntervalMs: 1000,
+      idleIntervalMs: 8000
     });
 
     await loop.tick();
@@ -32,6 +34,32 @@ describe("AutonomousLoop", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0].channelId).toBe("C-TEST");
     expect(calls[0].responder).toBe(responder);
+  });
+
+  it("stays fast while busy and backs off when idle", async () => {
+    let turns = 2;
+    const loop = new AutonomousLoop({
+      coordinator: {
+        async runHeartbeat() {
+          return turns;
+        }
+      } as unknown as ConversationCoordinator,
+      responder: noopResponder(),
+      channelId: "C-TEST",
+      busyIntervalMs: 1000,
+      idleIntervalMs: 8000
+    });
+
+    expect(await loop.tick()).toBe(1000); // produced work -> fast
+
+    turns = 0;
+    expect(await loop.tick()).toBe(2000); // idle -> back off (1000 * 2)
+    expect(await loop.tick()).toBe(4000);
+    expect(await loop.tick()).toBe(8000); // capped at idle ceiling
+    expect(await loop.tick()).toBe(8000);
+
+    turns = 5;
+    expect(await loop.tick()).toBe(1000); // work again -> snap back to fast
   });
 
   it("swallows heartbeat errors so the loop keeps running", async () => {
@@ -44,11 +72,12 @@ describe("AutonomousLoop", () => {
       } as unknown as ConversationCoordinator,
       responder: noopResponder(),
       channelId: "C-TEST",
-      intervalMs: 1000,
+      busyIntervalMs: 1000,
+      idleIntervalMs: 8000,
       log: (m) => logs.push(m)
     });
 
-    await expect(loop.tick()).resolves.toBeUndefined();
+    await expect(loop.tick()).resolves.toBe(8000);
     expect(logs.some((line) => line.includes("kill switch engaged"))).toBe(true);
   });
 

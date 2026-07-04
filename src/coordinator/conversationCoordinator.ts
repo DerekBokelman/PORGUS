@@ -52,8 +52,10 @@ export class ConversationCoordinator {
    * Autonomous heartbeat: without any human input, inject a synthetic company
    * "work cycle" message so agents advance the task queue on their own. Runs on
    * the same serialized queue as inbound Slack messages so the two never race.
+   * Resolves with the number of agent turns produced this cycle (0 means the
+   * agents were idle — e.g. budget/rate-limited — so callers can back off).
    */
-  async runHeartbeat(channelId: string, responder: AgentResponder): Promise<void> {
+  async runHeartbeat(channelId: string, responder: AgentResponder): Promise<number> {
     const run = this.queue.then(() => this.processHeartbeat(channelId, responder));
 
     this.queue = run.then(
@@ -64,9 +66,9 @@ export class ConversationCoordinator {
     return run;
   }
 
-  private async processHeartbeat(channelId: string, responder: AgentResponder): Promise<void> {
+  private async processHeartbeat(channelId: string, responder: AgentResponder): Promise<number> {
     if (!this.options.livingRuntime) {
-      return;
+      return 0;
     }
     this.options.livingRuntime.assertRunnable();
 
@@ -91,6 +93,7 @@ export class ConversationCoordinator {
     // Each heartbeat is a fresh cycle; let the chain run up to the configured cap.
     this.consecutiveAgentTurns = 0;
     await this.processMessage(synthetic, responder);
+    return this.consecutiveAgentTurns;
   }
 
   private async processMessage(message: ChannelMessage, responder: AgentResponder): Promise<void> {
@@ -109,12 +112,16 @@ export class ConversationCoordinator {
       return;
     }
 
-    const candidates = this.selectCandidateAgents(message).slice(
-      0,
-      this.options.registry.getCoordination().maxResponsesPerMessage
-    );
+    // Full ordered list — a failing/skipped agent does not consume a response
+    // slot, so one down provider can't stall the whole cycle on the first agent.
+    const candidates = this.selectCandidateAgents(message);
+    const maxResponses = this.options.registry.getCoordination().maxResponsesPerMessage;
+    let responses = 0;
 
     for (const agent of candidates) {
+      if (responses >= maxResponses) {
+        break;
+      }
       if (!this.cooldownAllows(agent)) {
         continue;
       }
@@ -130,37 +137,47 @@ export class ConversationCoordinator {
         console.log(`[living] Auto-claimed ${claimedTask} for ${agent.id}`);
       }
 
-      const startedAt = Date.now();
-      const provider = this.options.providerResolver.createForAgent(agent);
-      const rawText = await provider.complete({
-        agent,
-        messages: await this.buildPrompt(agent, message),
-        temperature: agent.temperature
-      });
-
-      await this.options.budgetGuard.recordRealCall(agent);
-
-      let text = rawText.trim();
-      if (this.options.livingRuntime) {
-        const turn = this.options.livingRuntime.afterAgentTurn(
+      let text: string;
+      let post: AgentPostResult;
+      try {
+        const startedAt = Date.now();
+        const provider = this.options.providerResolver.createForAgent(agent);
+        const rawText = await provider.complete({
           agent,
-          message,
-          rawText,
-          Date.now() - startedAt
-        );
-        for (const effect of turn.sideEffects) {
-          console.log(`[living] ${effect}`);
-        }
-        text = turn.responseText.trim();
-      }
+          messages: await this.buildPrompt(agent, message),
+          temperature: agent.temperature
+        });
 
-      if (!text) {
+        await this.options.budgetGuard.recordRealCall(agent);
+
+        text = rawText.trim();
+        if (this.options.livingRuntime) {
+          const turn = this.options.livingRuntime.afterAgentTurn(
+            agent,
+            message,
+            rawText,
+            Date.now() - startedAt
+          );
+          for (const effect of turn.sideEffects) {
+            console.log(`[living] ${effect}`);
+          }
+          text = turn.responseText.trim();
+        }
+
+        if (!text) {
+          continue;
+        }
+
+        post = await responder.postAgentMessage(agent, text, message);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : "unknown";
+        console.warn(`[coordinator] ${agent.displayName} turn skipped: ${reason}`);
         continue;
       }
 
-      const post = await responder.postAgentMessage(agent, text, message);
       this.lastResponseAtByAgent.set(agent.id, Date.now());
       this.consecutiveAgentTurns += 1;
+      responses += 1;
 
       const recorded = await this.options.memory.recordChannelMessage({
         channelId: message.channelId,

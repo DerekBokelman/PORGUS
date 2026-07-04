@@ -10,6 +10,9 @@ const envSchema = z
       .string()
       .default("true")
       .transform((value) => value.toLowerCase() !== "false" && value !== "0"),
+    // Delay between work cycles while agents are actively working.
+    LIVING_TICK_MIN_MS: z.coerce.number().int().positive().default(20000),
+    // Backoff ceiling: delay between cycles once agents go idle (budget/rate-limited).
     LIVING_TICK_MS: z.coerce.number().int().positive().default(180000)
   });
 
@@ -31,6 +34,7 @@ export function loadConfig() {
     livingSpendCeilingUsd: parsed.data.LIVING_SPEND_CEILING_USD,
     livingMaxHeadcount: parsed.data.LIVING_MAX_HEADCOUNT,
     livingHeartbeatEnabled: parsed.data.LIVING_HEARTBEAT,
-    livingTickMs: parsed.data.LIVING_TICK_MS
+    livingTickBusyMs: parsed.data.LIVING_TICK_MIN_MS,
+    livingTickIdleMs: parsed.data.LIVING_TICK_MS
   };
 }
