@@ -67,10 +67,17 @@ async function main() {
   const slackStatus = await ensureSlackAgentsReady(registry, process.env, channelId);
   for (const row of slackStatus) {
     const join = row.joinOk === false ? ` join=${row.joinError}` : "";
-    const note = row.slackUser && row.slackUser !== row.agentId ? ` (slack:@${row.slackUser})` : "";
+    const handleNote =
+      row.slackUser && row.handleMismatch
+        ? ` (posts as ${row.displayName}; @mention still @${row.slackUser} — Slack locks bot handle at create)`
+        : row.slackUser && row.slackUser !== row.agentId
+          ? ` (slack:@${row.slackUser})`
+          : row.slackUser
+            ? ` (@${row.slackUser})`
+            : "";
     console.log(
       row.authOk
-        ? `Slack OK: ${row.displayName}${note}${join}`
+        ? `Slack OK: ${row.displayName}${handleNote}${join}`
         : `Slack FAIL: ${row.displayName} — ${row.error ?? "unknown"}`
     );
   }

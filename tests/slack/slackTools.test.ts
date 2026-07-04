@@ -36,8 +36,15 @@ describe("executeSlackTool", () => {
         setTopic: vi.fn(async () => ({ ok: true })),
         setPurpose: vi.fn(async () => ({ ok: true })),
         invite: vi.fn(async () => ({ ok: true })),
+        join: vi.fn(async () => ({ ok: true })),
         archive: vi.fn(async () => ({ ok: true })),
-        list: vi.fn(async () => ({ ok: true, channels: [{ name: "general" }, { name: "random" }] }))
+        list: vi.fn(async () => ({
+          ok: true,
+          channels: [
+            { id: "C111", name: "general" },
+            { id: "C222", name: "pilot-tracking" }
+          ]
+        }))
       },
       chat: { postMessage: vi.fn(async () => ({ ok: true, ts: "1.1" })) },
       reactions: { add: vi.fn(async () => ({ ok: true })) },
@@ -59,6 +66,40 @@ describe("executeSlackTool", () => {
       is_private: false
     });
     expect(result).toContain("Created channel #growth-experiments");
+    expect(result).toContain("C999");
+    expect(client.conversations.join).toHaveBeenCalledWith({ channel: "C999" });
+  });
+
+  it("reuses an existing channel when name is taken", async () => {
+    const client = fakeClient({
+      conversations: {
+        ...fakeClient().conversations,
+        create: vi.fn(async () => ({ ok: false, error: "name_taken" }))
+      }
+    });
+    const context = { defaultChannelId: "C-SOURCE" };
+    const result = await executeSlackTool(
+      client,
+      { action: "create_channel", args: { name: "pilot-tracking" } },
+      context
+    );
+    expect(result).toContain("already exists");
+    expect(result).toContain("C222");
+    expect(context.activeChannelId).toBe("C222");
+  });
+
+  it("resolves #channel names for set_topic", async () => {
+    const client = fakeClient();
+    const result = await executeSlackTool(
+      client,
+      { action: "set_topic", args: { channel: "#pilot-tracking", topic: "Pilot" } },
+      {}
+    );
+    expect(client.conversations.setTopic).toHaveBeenCalledWith({
+      channel: "C222",
+      topic: "Pilot"
+    });
+    expect(result).toContain("Updated topic on C222");
   });
 
   it("falls back to the source channel for set_topic", async () => {
@@ -72,7 +113,7 @@ describe("executeSlackTool", () => {
       channel: "C-SOURCE",
       topic: "Ship it"
     });
-    expect(result).toBe("Updated channel topic");
+    expect(result).toBe("Updated topic on C-SOURCE");
   });
 
   it("returns a readable error instead of throwing when Slack rejects the call", async () => {

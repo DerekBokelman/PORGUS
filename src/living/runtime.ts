@@ -25,6 +25,7 @@ const HUMAN_APPROVE = /approve\s+headcount(?:\s+(P-[a-z0-9]+))?/i;
  */
 export class LivingCompanyRuntime {
   private readonly claimedTaskByAgent = new Map<string, string>();
+  private lastHeartbeatSeedAt = 0;
 
   constructor(private readonly options: LivingCompanyRuntimeOptions) {
     options.headcount.initialize();
@@ -66,6 +67,11 @@ export class LivingCompanyRuntime {
     if (this.hasOpenWork()) {
       return undefined;
     }
+    // Avoid spawning identical "advance the company" tasks every heartbeat tick.
+    const seedCooldownMs = 10 * 60 * 1000;
+    if (Date.now() - this.lastHeartbeatSeedAt < seedCooldownMs) {
+      return undefined;
+    }
     const cap = Math.min(0.1, this.options.company.ledger.remainingCeilingUsd() || 0);
     if (cap <= 0) {
       return undefined;
@@ -80,6 +86,7 @@ export class LivingCompanyRuntime {
       budgetCapUsd: cap,
       priority: 5
     });
+    this.lastHeartbeatSeedAt = Date.now();
     return task.taskId;
   }
 

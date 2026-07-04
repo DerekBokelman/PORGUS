@@ -16,10 +16,10 @@ defaults:
   cooldownMs: 2000
 
 budget:
-  dailyRealCallLimit: 45
+  dailyRealCallLimit: 200
 
 coordination:
-  maxConsecutiveAgentTurns: 6
+  maxConsecutiveAgentTurns: 2
   responseDelayMs: 200
   maxResponsesPerMessage: 1
   recentMessageLimit: 12
@@ -27,8 +27,8 @@ coordination:
 agents:
   - id: architect
     displayName: Architect
-    provider: gemini
-    model: gemini-2.5-flash
+    provider: openrouter
+    model: openrouter/free
     respondsWhen: always
     personality: Cautious, opinionated, allergic to complexity, and quick to say no. Thinks in interfaces, failure modes, and deletion before addition.
     role: "Designs and builds the agent infrastructure: orchestration, message passing, memory systems, hiring and firing mechanics, and the frameworks the other agents live inside."

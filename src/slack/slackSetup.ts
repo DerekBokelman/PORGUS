@@ -8,6 +8,7 @@ export interface SlackSetupResult {
   displayName: string;
   authOk: boolean;
   slackUser?: string;
+  handleMismatch?: boolean;
   joinOk?: boolean;
   joinError?: string;
   error?: string;
@@ -65,8 +66,16 @@ async function slackAuthTest(
     displayName: agent.displayName,
     authOk: data.ok,
     slackUser: data.user,
-    error: data.ok ? undefined : data.error
+    error: data.ok ? undefined : data.error,
+    handleMismatch:
+      data.ok && data.user
+        ? expectedHandle(agent.id) !== data.user
+        : undefined
   };
+}
+
+function expectedHandle(agentId: string): string {
+  return agentId; // architect -> architect, auditor -> auditor, ...
 }
 
 async function joinChannel(

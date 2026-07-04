@@ -141,6 +141,9 @@ export class ConversationCoordinator {
       }
 
       if (!(await this.options.budgetGuard.canUseRealCall(agent))) {
+        console.warn(
+          `[coordinator] ${agent.displayName} skipped: daily real-call budget exhausted (provider=${agent.provider})`
+        );
         continue;
       }
 
@@ -221,7 +224,13 @@ export class ConversationCoordinator {
       });
 
       if (recorded) {
-        await this.processMessage(recorded, responder);
+        // Agent-to-agent chains are capped by maxConsecutiveAgentTurns; skip ping-pong on
+        // heartbeat-only "Done." status posts so the loop does not spin on tool errors.
+        const statusOnly = /^done\.?\s*(t-\d+)?/i.test(text.trim());
+        const fromHeartbeat = message.authorAgentId === "heartbeat";
+        if (!statusOnly && !fromHeartbeat) {
+          await this.processMessage(recorded, responder);
+        }
       }
     }
   }
@@ -312,6 +321,12 @@ export class ConversationCoordinator {
           "",
           "You can shape the Slack workspace yourself. When you genuinely want to take an action,",
           "add a [SLACK] tag on its own line at the END of your message. Use only when it helps; never spam them.",
+          "Channel rules (important):",
+          "  - Run [SLACK] action=list_channels BEFORE create_channel to avoid duplicates.",
+          "  - create_channel returns a channel id like C0123ABC — copy it for follow-up tools.",
+          "  - For set_topic/set_purpose/invite/pin after create, either omit channel (uses last created)",
+          "    or pass channel=C0123ABC (never pass #names or made-up ids).",
+          "  - Do not retry the same create_channel if you got name_taken — use the returned id instead.",
           "  [SLACK] action=create_channel name=growth-experiments topic=\"Where we test ideas\"",
           "  [SLACK] action=set_topic channel=<id> topic=<text>   (defaults to this channel if omitted)",
           "  [SLACK] action=set_purpose channel=<id> purpose=<text>",
