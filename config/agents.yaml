@@ -1,7 +1,7 @@
 # Free-tier model map (one provider per core agent — spreads API quotas):
 #   architect  → Gemini AI Studio   gemini-2.5-flash        free tier (AI Studio key)
 #   auditor    → Groq                llama-3.3-70b-versatile  ~1,000 req/day, 30 RPM
-#   operator   → OpenRouter          llama-3.3-70b-instruct:free  ~50 req/day (200 w/ usage)
+#   operator   → OpenRouter          openrouter/free  auto-routes free models
 #   breeder    → Groq                llama-3.1-8b-instant     fast + different model than Auditor
 #   chronicler → Ollama (local)      llama3.2:3b              unlimited if Ollama running
 #
@@ -19,7 +19,7 @@ budget:
   dailyRealCallLimit: 45
 
 coordination:
-  maxConsecutiveAgentTurns: 3
+  maxConsecutiveAgentTurns: 5
   responseDelayMs: 1500
   maxResponsesPerMessage: 1
   recentMessageLimit: 12
@@ -69,7 +69,7 @@ agents:
   - id: operator
     displayName: Operator
     provider: openrouter
-    model: meta-llama/llama-3.3-70b-instruct:free
+    model: openrouter/free
     personality: Pragmatic, impatient, ROI-obsessed, and focused on unit economics. Says when clever work does not pay for itself.
     role: "Manages revenue and resources: tracks burn rate, API cost, compute cost, income opportunities, budget allocation, and throttles expensive agents when needed."
     slack:

@@ -3,6 +3,7 @@ import { AgentRegistry } from "./agents/agentRegistry.js";
 import { CompositeAgentRegistry } from "./agents/compositeRegistry.js";
 import { loadConfig } from "./config/env.js";
 import { ConversationCoordinator } from "./coordinator/conversationCoordinator.js";
+import { AutonomousLoop } from "./living/autonomousLoop.js";
 import { bootstrapLivingCompany } from "./living/bootstrap.js";
 import { HeadcountManager } from "./living/headcount.js";
 import { LivingCompanyRuntime } from "./living/runtime.js";
@@ -10,6 +11,7 @@ import { SqliteLivingStore } from "./living/sqliteLivingStore.js";
 import { BudgetGuard } from "./memory/budgetGuard.js";
 import { SqliteMemoryStore } from "./memory/sqliteMemoryStore.js";
 import { ProviderFactory } from "./providers/providerFactory.js";
+import { ensureSlackAgentsReady } from "./slack/slackSetup.js";
 import { startMultiBotRuntime } from "./slack/botRuntime.js";
 
 async function main() {
@@ -48,7 +50,9 @@ async function main() {
     livingRuntime
   });
 
+  let autonomousLoop: AutonomousLoop | undefined;
   const halt = (signal: string) => {
+    autonomousLoop?.stop();
     company.hardRules.killSwitch.halt();
     console.log(`\nKill switch engaged (${signal}). Halting agent execution.`);
     process.exit(0);
@@ -56,7 +60,19 @@ async function main() {
   process.on("SIGINT", () => halt("SIGINT"));
   process.on("SIGTERM", () => halt("SIGTERM"));
 
-  await startMultiBotRuntime({
+  const channelId = process.env.SLACK_CHANNEL_ID;
+  const slackStatus = await ensureSlackAgentsReady(registry, process.env, channelId);
+  for (const row of slackStatus) {
+    const join = row.joinOk === false ? ` join=${row.joinError}` : "";
+    const note = row.slackUser && row.slackUser !== row.agentId ? ` (slack:@${row.slackUser})` : "";
+    console.log(
+      row.authOk
+        ? `Slack OK: ${row.displayName}${note}${join}`
+        : `Slack FAIL: ${row.displayName} — ${row.error ?? "unknown"}`
+    );
+  }
+
+  const { responder } = await startMultiBotRuntime({
     registry,
     memory,
     coordinator
@@ -72,6 +88,25 @@ async function main() {
       `Spend ceiling $${config.livingSpendCeilingUsd} | ` +
       `Headcount ${headcount.activeAgentCount()}/${hc.activeSlotLimit} (max ${hc.humanMaxSlots})`
   );
+
+  if (config.livingHeartbeatEnabled) {
+    if (!channelId) {
+      console.log(
+        "Heartbeat disabled: set SLACK_CHANNEL_ID so autonomous work cycles have a channel to post to."
+      );
+    } else {
+      autonomousLoop = new AutonomousLoop({
+        coordinator,
+        responder,
+        channelId,
+        intervalMs: config.livingTickMs,
+        startDelayMs: 8000
+      });
+      autonomousLoop.start();
+    }
+  } else {
+    console.log("Heartbeat disabled (LIVING_HEARTBEAT=false). Agents act only on Slack messages.");
+  }
 }
 
 main().catch((error) => {

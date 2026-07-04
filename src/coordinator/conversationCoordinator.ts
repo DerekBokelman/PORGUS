@@ -48,6 +48,51 @@ export class ConversationCoordinator {
     return run;
   }
 
+  /**
+   * Autonomous heartbeat: without any human input, inject a synthetic company
+   * "work cycle" message so agents advance the task queue on their own. Runs on
+   * the same serialized queue as inbound Slack messages so the two never race.
+   */
+  async runHeartbeat(channelId: string, responder: AgentResponder): Promise<void> {
+    const run = this.queue.then(() => this.processHeartbeat(channelId, responder));
+
+    this.queue = run.then(
+      () => undefined,
+      () => undefined
+    );
+
+    return run;
+  }
+
+  private async processHeartbeat(channelId: string, responder: AgentResponder): Promise<void> {
+    if (!this.options.livingRuntime) {
+      return;
+    }
+    this.options.livingRuntime.assertRunnable();
+
+    const seeded = this.options.livingRuntime.ensureSeedWork();
+    if (seeded) {
+      console.log(`[living] Heartbeat seeded ${seeded}`);
+    }
+
+    const synthetic: ChannelMessage = {
+      id: `heartbeat-${Date.now()}`,
+      channelId,
+      ts: "",
+      threadTs: undefined,
+      authorType: "agent",
+      authorId: "heartbeat",
+      authorName: "Heartbeat",
+      authorAgentId: "heartbeat",
+      text: this.options.livingRuntime.heartbeatBrief(),
+      createdAt: new Date().toISOString()
+    };
+
+    // Each heartbeat is a fresh cycle; let the chain run up to the configured cap.
+    this.consecutiveAgentTurns = 0;
+    await this.processMessage(synthetic, responder);
+  }
+
   private async processMessage(message: ChannelMessage, responder: AgentResponder): Promise<void> {
     this.options.livingRuntime?.assertRunnable();
 
@@ -168,10 +213,12 @@ export class ConversationCoordinator {
     }
 
     const text = message.text.toLowerCase();
+    const aliases = AGENT_ALIASES[agent.id] ?? [];
     const mentioned =
       text.includes(`@${agent.id.toLowerCase()}`) ||
       text.includes(`@${agent.displayName.toLowerCase()}`) ||
-      text.includes(agent.displayName.toLowerCase());
+      text.includes(agent.displayName.toLowerCase()) ||
+      aliases.some((alias) => text.includes(alias));
 
     if (agent.respondsWhen === "mentioned") {
       return mentioned;
@@ -247,3 +294,12 @@ function delay(ms: number): Promise<void> {
 
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+/** Legacy Slack bot usernames still used in workspace tokens. */
+const AGENT_ALIASES: Record<string, string[]> = {
+  architect: ["ceo"],
+  auditor: ["researcher"],
+  operator: ["engineer"],
+  breeder: ["marketer"],
+  chronicler: ["critic"]
+};

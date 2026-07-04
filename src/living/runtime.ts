@@ -34,6 +34,63 @@ export class LivingCompanyRuntime {
     this.options.company.hardRules.killSwitch.assertRunnable();
   }
 
+  /** True when the task queue has any open work waiting to be claimed. */
+  hasOpenWork(): boolean {
+    return this.options.company.listOpenTasks().length > 0;
+  }
+
+  /**
+   * Guarantee the company always has something concrete to work on. When the
+   * queue is empty, open a low-priority self-improvement task for the Architect
+   * so the heartbeat produces real claim/execute/score cycles instead of chatter.
+   */
+  ensureSeedWork(): string | undefined {
+    if (this.hasOpenWork()) {
+      return undefined;
+    }
+    const cap = Math.min(0.1, this.options.company.ledger.remainingCeilingUsd() || 0);
+    if (cap <= 0) {
+      return undefined;
+    }
+    const task = this.options.company.queue.create({
+      createdBy: "heartbeat",
+      roleRequired: "architect",
+      title: "Advance the company: next highest-leverage improvement",
+      spec:
+        "No open work in the queue. Identify the single most valuable next step for the " +
+        "company's mission and either do it or break it into a concrete task for the right role.",
+      budgetCapUsd: cap,
+      priority: 5
+    });
+    return task.taskId;
+  }
+
+  /**
+   * Short brief for the autonomous heartbeat: current mode, open tasks, and a
+   * plain-language instruction (no protocol tags, so it is never parsed as one).
+   */
+  heartbeatBrief(): string {
+    const { company } = this.options;
+    const mode = company.ledger.mode();
+    const open = this.openTasksSummary();
+    if (open) {
+      return [
+        "Autonomous work cycle.",
+        `Company mode: ${mode}.`,
+        "Open tasks in the queue:",
+        open,
+        "If one matches your role it is auto-claimed for you — do the work now and report the result.",
+        "Otherwise advance the company: review recent work, score it, reconcile the budget, or record a lesson."
+      ].join("\n");
+    }
+    return [
+      "Autonomous work cycle.",
+      `Company mode: ${mode}. The task queue is empty.`,
+      "Architect: define the single highest-leverage next task for the company's current goal and open it.",
+      "Everyone else: review recent work, score outstanding results, reconcile the budget, or propose an improvement."
+    ].join("\n");
+  }
+
   /** Claim the oldest open task matching this agent's role before it responds. */
   prepareAgentTurn(agent: AgentDefinition): string | undefined {
     const role = this.actorRole(agent.id);
