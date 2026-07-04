@@ -35,6 +35,14 @@ export interface AgentToolRunnerLike {
   run(agent: AgentDefinition, rawText: string): Promise<string[]>;
 }
 
+interface MessageFrame {
+  message: ChannelMessage;
+  candidates: AgentDefinition[];
+  maxResponses: number;
+  index: number;
+  responses: number;
+}
+
 export interface ConversationCoordinatorOptions {
   registry: AgentRegistry | CompositeAgentRegistry;
   memory: MemoryStore;
@@ -110,32 +118,31 @@ export class ConversationCoordinator {
     return this.consecutiveAgentTurns;
   }
 
-  private async processMessage(message: ChannelMessage, responder: AgentResponder): Promise<void> {
-    this.options.livingRuntime?.assertRunnable();
-
-    if (this.options.livingRuntime) {
-      const effects = this.options.livingRuntime.handleIncomingMessage(message);
-      for (const effect of effects) {
-        console.log(`[living] ${effect}`);
-      }
+  /**
+   * Depth-first cascade over messages: a message can produce agent replies,
+   * each of which is itself processed for further replies before its siblings
+   * are considered — matching how a human Slack thread naturally unwinds.
+   * Implemented as an explicit stack (rather than recursion) so cascade depth
+   * doesn't grow the JS call stack; `maxConsecutiveAgentTurns` still bounds the
+   * total number of frames pushed.
+   */
+  private async processMessage(initial: ChannelMessage, responder: AgentResponder): Promise<void> {
+    const stack: MessageFrame[] = [];
+    const firstFrame = this.beginFrame(initial);
+    if (firstFrame) {
+      stack.push(firstFrame);
     }
 
-    if (message.authorType === "human") {
-      this.consecutiveAgentTurns = 0;
-    } else if (this.consecutiveAgentTurns >= this.options.registry.getCoordination().maxConsecutiveAgentTurns) {
-      return;
-    }
-
-    // Full ordered list — a failing/skipped agent does not consume a response
-    // slot, so one down provider can't stall the whole cycle on the first agent.
-    const candidates = this.selectCandidateAgents(message);
-    const maxResponses = this.options.registry.getCoordination().maxResponsesPerMessage;
-    let responses = 0;
-
-    for (const agent of candidates) {
-      if (responses >= maxResponses) {
-        break;
+    while (stack.length > 0) {
+      const frame = stack[stack.length - 1];
+      if (frame.responses >= frame.maxResponses || frame.index >= frame.candidates.length) {
+        stack.pop();
+        continue;
       }
+
+      const agent = frame.candidates[frame.index];
+      frame.index += 1;
+
       if (!this.cooldownAllows(agent)) {
         continue;
       }
@@ -159,11 +166,12 @@ export class ConversationCoordinator {
       try {
         const startedAt = Date.now();
         const provider = this.options.providerResolver.createForAgent(agent);
-        const rawText = await provider.complete({
+        const completion = await provider.complete({
           agent,
-          messages: await this.buildPrompt(agent, message),
+          messages: await this.buildPrompt(agent, frame.message),
           temperature: agent.temperature
         });
+        const rawText = completion.text;
 
         await this.options.budgetGuard.recordRealCall(agent);
 
@@ -171,9 +179,10 @@ export class ConversationCoordinator {
         if (this.options.livingRuntime) {
           const turn = this.options.livingRuntime.afterAgentTurn(
             agent,
-            message,
+            frame.message,
             rawText,
-            Date.now() - startedAt
+            Date.now() - startedAt,
+            completion.usage
           );
           for (const effect of turn.sideEffects) {
             console.log(`[living] ${effect}`);
@@ -183,7 +192,7 @@ export class ConversationCoordinator {
 
         const toolNotes: string[] = [];
         if (responder.runAgentTools) {
-          toolNotes.push(...(await responder.runAgentTools(agent, rawText, message)));
+          toolNotes.push(...(await responder.runAgentTools(agent, rawText, frame.message)));
         }
         if (this.options.toolRunner) {
           toolNotes.push(...(await this.options.toolRunner.run(agent, rawText)));
@@ -201,7 +210,7 @@ export class ConversationCoordinator {
           continue;
         }
 
-        post = await responder.postAgentMessage(agent, text, message);
+        post = await responder.postAgentMessage(agent, text, frame.message);
       } catch (error) {
         const reason = error instanceof Error ? error.message : "unknown";
         console.warn(`[coordinator] ${agent.displayName} turn skipped: ${reason}`);
@@ -210,12 +219,12 @@ export class ConversationCoordinator {
 
       this.lastResponseAtByAgent.set(agent.id, Date.now());
       this.consecutiveAgentTurns += 1;
-      responses += 1;
+      frame.responses += 1;
 
       const recorded = await this.options.memory.recordChannelMessage({
-        channelId: message.channelId,
+        channelId: frame.message.channelId,
         ts: post.ts,
-        threadTs: message.threadTs ?? message.ts,
+        threadTs: frame.message.threadTs ?? frame.message.ts,
         authorType: "agent",
         authorId: agent.id,
         authorName: agent.displayName,
@@ -227,10 +236,39 @@ export class ConversationCoordinator {
         // Skip bare "Done. T-000xx" status posts — they caused tool-error ping-pong loops.
         const statusOnly = /^done\.?\s*(t-\d+)?(\s*complete\.?)?$/i.test(text.trim());
         if (!statusOnly) {
-          await this.processMessage(recorded, responder);
+          const nextFrame = this.beginFrame(recorded);
+          if (nextFrame) {
+            stack.push(nextFrame);
+          }
         }
       }
     }
+  }
+
+  /** Per-message setup shared by the initial call and every cascaded reply. */
+  private beginFrame(message: ChannelMessage): MessageFrame | undefined {
+    this.options.livingRuntime?.assertRunnable();
+
+    if (this.options.livingRuntime) {
+      const effects = this.options.livingRuntime.handleIncomingMessage(message);
+      for (const effect of effects) {
+        console.log(`[living] ${effect}`);
+      }
+    }
+
+    if (message.authorType === "human") {
+      this.consecutiveAgentTurns = 0;
+    } else if (this.consecutiveAgentTurns >= this.options.registry.getCoordination().maxConsecutiveAgentTurns) {
+      return undefined;
+    }
+
+    return {
+      message,
+      candidates: this.selectCandidateAgents(message),
+      maxResponses: this.options.registry.getCoordination().maxResponsesPerMessage,
+      index: 0,
+      responses: 0
+    };
   }
 
   private selectCandidateAgents(message: ChannelMessage): AgentDefinition[] {
@@ -316,6 +354,8 @@ export class ConversationCoordinator {
           "How work gets done:",
           "- The system automatically assigns you a task from the queue and marks it done when you finish — you do not need to manage that.",
           "- Just focus on producing the actual work product for the task in your reply.",
+          "- Bias to action: ship the finished deliverable in THIS message. No status updates, no asking permission, no proposing meetings or check-ins, no 'I will start by...' — start by doing it.",
+          "- Think bigger than the immediate step: deliver the whole work product, then name the next concrete task if one exists.",
           "",
           "You can shape the Slack workspace yourself. When you genuinely want to take an action,",
           "add a [SLACK] tag on its own line at the END of your message. Use only when it helps; never spam them.",

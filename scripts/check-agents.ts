@@ -47,7 +47,7 @@ for (const agent of registry.list()) {
       messages: [{ role: "user", content: "Reply with one word: ok" }],
       temperature: agent.temperature
     });
-    console.log(reply.slice(0, 40).replace(/\n/g, " ") || "(empty)");
+    console.log(reply.text.slice(0, 40).replace(/\n/g, " ") || "(empty)");
   } catch (error) {
     failures++;
     console.log(`FAIL — ${error instanceof Error ? error.message : error}`);

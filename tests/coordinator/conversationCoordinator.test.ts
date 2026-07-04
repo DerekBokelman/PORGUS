@@ -43,7 +43,7 @@ describe("ConversationCoordinator", () => {
         createForAgent(agent: AgentDefinition): LlmProvider {
           return {
             async complete() {
-              return `Organizing us.\n[SLACK] action=create_channel name=growth`;
+              return { text: `Organizing us.\n[SLACK] action=create_channel name=growth` };
             }
           };
         }
@@ -97,7 +97,7 @@ function fakeResolver() {
     createForAgent(agent: AgentDefinition): LlmProvider {
       return {
         async complete() {
-          return `${agent.displayName} response`;
+          return { text: `${agent.displayName} response` };
         }
       };
     }

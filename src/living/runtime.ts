@@ -1,4 +1,4 @@
-import type { AgentDefinition, ChannelMessage } from "../types.js";
+import type { AgentDefinition, ChannelMessage, LlmUsage } from "../types.js";
 import type { CompositeAgentRegistry } from "../agents/compositeRegistry.js";
 import { estimateCallCostUsd } from "./costEstimate.js";
 import type { HeadcountManager } from "./headcount.js";
@@ -68,7 +68,7 @@ export class LivingCompanyRuntime {
       return undefined;
     }
     // Avoid spawning identical "advance the company" tasks every heartbeat tick.
-    const seedCooldownMs = 10 * 60 * 1000;
+    const seedCooldownMs = 2 * 60 * 1000;
     if (Date.now() - this.lastHeartbeatSeedAt < seedCooldownMs) {
       return undefined;
     }
@@ -79,10 +79,11 @@ export class LivingCompanyRuntime {
     const task = this.options.company.queue.create({
       createdBy: "heartbeat",
       roleRequired: "architect",
-      title: "Advance the company: next highest-leverage improvement",
+      title: "Plan the next big push",
       spec:
-        "No open work in the queue. Identify the single most valuable next step for the " +
-        "company's mission and either do it or break it into a concrete task for the right role.",
+        "Queue is empty. Think big: pick the most ambitious achievable goal for the company's " +
+        "mission, break it into concrete tasks for each role, and emit a [TASK] tag for every one " +
+        "in this single message. Do not wait for discussion or consensus.",
       budgetCapUsd: cap,
       priority: 5
     });
@@ -100,19 +101,19 @@ export class LivingCompanyRuntime {
     const open = this.openTasksSummary();
     if (open) {
       return [
-        "Autonomous work cycle.",
+        "Autonomous work cycle. Bias to action — no meetings, no waiting.",
         `Company mode: ${mode}.`,
         "Open tasks in the queue:",
         open,
-        "If one matches your role it is auto-claimed for you — do the work now and report the result.",
-        "Otherwise advance the company: review recent work, score it, reconcile the budget, or record a lesson."
+        "If one matches your role it is auto-claimed for you — produce the finished deliverable NOW, then move straight to the next open task.",
+        "Architect: if the queue is thin, extend the plan with new [TASK] tags for the right roles."
       ].join("\n");
     }
     return [
-      "Autonomous work cycle.",
+      "Autonomous work cycle. Bias to action — no meetings, no waiting.",
       `Company mode: ${mode}. The task queue is empty.`,
-      "Architect: define the single highest-leverage next task for the company's current goal and open it.",
-      "Everyone else: review recent work, score outstanding results, reconcile the budget, or propose an improvement."
+      "Architect: think big. Set the next ambitious goal and break it into concrete tasks for every role — emit multiple [TASK] tags in one message.",
+      "Everyone else: ship something useful for the current goal now; do not wait to be assigned."
     ].join("\n");
   }
 
@@ -181,16 +182,70 @@ export class LivingCompanyRuntime {
       scoreboard ? `Performance scoreboard:\n${scoreboard}` : "",
       pending ? `Pending proposals:\n${pending}` : "",
       "",
-      "Optional structured actions: you may end your message with ONE of these tags only when you",
-      "genuinely want that action taken. Otherwise omit them entirely — never invent IDs or copy examples.",
+      this.roleGuidance(agent, mode),
+      "Structured actions: end your message with tags only when you genuinely want the action taken.",
+      "Never invent IDs or copy examples.",
       "  [TASK] role=<role> cap=<usd> title=<short> spec=<details>   (propose new work for a role)",
       "  [PROPOSAL] kind=headcount slots=1 reason=<why>              (ask to grow the team)",
       "  [REVENUE] source=<name> amount=<usd>                        (log real income)",
-      "Do NOT emit [CLAIM], [RESULT], [SCORE], or [VETO] — the system handles those automatically.",
-      "Write your actual message in plain language first; a tag is optional and comes last."
+      "Do NOT emit [CLAIM] or [RESULT] — the system handles those automatically.",
+      "[SCORE] is Auditor-only. [APPROVE] is Operator-only. [LESSON] is Chronicler-only.",
+      "Write your actual message in plain language first; tags come last."
     ]
       .filter(Boolean)
       .join("\n");
+  }
+
+  private roleGuidance(agent: AgentDefinition, mode: string): string {
+    if (agent.id === "architect") {
+      return [
+        "You are the PLANNER. You own broad plans and role assignment. When a goal needs work,",
+        "break it into concrete tasks and emit MULTIPLE [TASK] tags in one message — one per",
+        "task, assigned to the best-suited role, with specs concrete enough to execute without",
+        "any follow-up discussion. Plan ambitiously; delegate immediately."
+      ].join("\n");
+    }
+
+    if (agent.id === "auditor") {
+      const unscored = this.unscoredTaskBrief();
+      return [
+        "You are the AUDITOR. Score completed work honestly — do not default to a fixed number.",
+        "Rubric: does the result actually satisfy the task spec? scoreOverall 0-10",
+        "(0 = no real output or wrong, 5 = partial/mediocre, 8-10 = fully correct and useful).",
+        "costEff 0-10 rates $ efficiency for that quality (10 = cheap and great, 0 = expensive and bad).",
+        unscored ? `Tasks awaiting your score:\n${unscored}` : "No tasks awaiting score right now.",
+        "  [SCORE] task=<id> overall=<0-10> cost_eff=<0-10> rationale=<short honest reason>",
+        "Then do your own executor work: claimed tasks still ship in this message."
+      ].join("\n");
+    }
+
+    if (agent.id === "operator") {
+      return [
+        "You are the OPERATOR. You are the only agent who may approve headcount proposals.",
+        `Company mode: ${mode}. Auto-approve is only safe for a single-slot request in surplus mode;`,
+        'balance/deficit mode needs the human to say "approve headcount <id>".',
+        "Review pending proposals above against real workload/capability gaps, then:",
+        "  [APPROVE] ref=<proposal-id>",
+        "Do not approve out of habit. Then do your own executor work in this message."
+      ].join("\n");
+    }
+
+    if (agent.id === "chronicler") {
+      return [
+        "You are the CHRONICLER. Keep institutional memory accurate and current.",
+        "When you spot a genuine failure or repeated mistake in the conversation or a task result,",
+        "log it explicitly so the company does not repeat it:",
+        "  [LESSON] trigger=<what caused it> body=<what to do instead>",
+        "Only log real lessons — never routine successes or vague chatter.",
+        "Then do your own executor work: claimed tasks still ship in this message."
+      ].join("\n");
+    }
+
+    return [
+      "You are an EXECUTOR. Your claimed task is your job: produce the finished deliverable in",
+      "THIS message — no meetings, no status updates, no asking permission. When done, the",
+      "system moves you to the next open task automatically."
+    ].join("\n");
   }
 
   /** After an LLM call: record cost, parse protocol, auto-complete claimed tasks. */
@@ -198,11 +253,12 @@ export class LivingCompanyRuntime {
     agent: AgentDefinition,
     message: ChannelMessage,
     response: string,
-    latencyMs: number
+    latencyMs: number,
+    usage?: LlmUsage
   ): AgentTurnResult {
     this.assertRunnable();
     const effects: string[] = [];
-    const cost = estimateCallCostUsd(agent);
+    const cost = estimateCallCostUsd(agent, usage);
 
     try {
       this.options.company.ledger.recordCost({
@@ -227,22 +283,17 @@ export class LivingCompanyRuntime {
         });
         this.claimedTaskByAgent.delete(agent.id);
         effects.push(`Auto-completed ${claimedId}`);
-        this.autoScoreIfAuditor(agent, claimedId);
       } catch {
         // Task may already be completed via explicit [RESULT] tag.
       }
     }
 
     if (agent.id === "chronicler") {
-      effects.push(...this.chroniclerDistill(message, response));
+      effects.push(...this.chroniclerDistill(message));
     }
 
     if (agent.id === "operator") {
       effects.push(...this.operatorReconcile());
-    }
-
-    if (agent.id === "auditor") {
-      effects.push(...this.auditorScorePending());
     }
 
     if (agent.id === "breeder") {
@@ -334,6 +385,11 @@ export class LivingCompanyRuntime {
             break;
           }
           case "SCORE": {
+            // Only the auditor's own judgment counts — otherwise any agent could
+            // rubber-stamp its own work and corrupt the scoreboard.
+            if (actor !== "auditor") {
+              throw new Error("Only the auditor may score tasks.");
+            }
             const task = this.options.company.getTask(action.taskId);
             if (task) {
               this.options.company.auditor.score(task, {
@@ -349,6 +405,22 @@ export class LivingCompanyRuntime {
             }
             break;
           }
+          case "LESSON": {
+            this.options.company.knowledge.addDoNotRepeat(action.trigger, action.body);
+            effects.push(`Logged do-not-repeat: ${action.trigger.slice(0, 60)}`);
+            break;
+          }
+          case "APPROVE": {
+            // Only the operator actually reviews and approves headcount growth —
+            // it used to be auto-approved as "operator" for any proposer in surplus
+            // mode, which meant nobody was really deciding.
+            if (actor !== "operator") {
+              throw new Error("Only the operator may approve proposals.");
+            }
+            const proposal = this.options.headcount.approveProposal(action.ref, actor);
+            effects.push(`Operator approved ${proposal.proposalId}`);
+            break;
+          }
           case "PROPOSAL": {
             if (action.kind === "headcount") {
               const proposal = this.options.headcount.proposeHeadcount({
@@ -357,14 +429,6 @@ export class LivingCompanyRuntime {
                 createdBy: actor
               });
               effects.push(`Proposed headcount ${proposal.proposalId}`);
-              if (this.options.company.ledger.mode() === "surplus") {
-                try {
-                  this.options.headcount.approveProposal(proposal.proposalId, "operator");
-                  effects.push(`Auto-approved ${proposal.proposalId} (surplus mode)`);
-                } catch {
-                  effects.push(`Awaiting approval for ${proposal.proposalId}`);
-                }
-              }
             } else if (action.agentId && action.displayName && action.roleDescription) {
               const proposal = this.options.headcount.proposeAgent({
                 id: action.agentId,
@@ -419,26 +483,7 @@ export class LivingCompanyRuntime {
     });
   }
 
-  private autoScoreIfAuditor(agent: AgentDefinition, taskId: string): void {
-    if (agent.id !== "auditor") {
-      return;
-    }
-    const task = this.options.company.getTask(taskId);
-    if (!task) {
-      return;
-    }
-    this.options.company.auditor.score(task, {
-      agentId: task.claimedBy ?? agent.id,
-      success: true,
-      scoreOverall: 6,
-      costEfficiency: 5,
-      latencyMs: 100,
-      errorRate: 0,
-      rationale: "auto-score on complete"
-    });
-  }
-
-  private chroniclerDistill(message: ChannelMessage, response: string): string[] {
+  private chroniclerDistill(message: ChannelMessage): string[] {
     if (message.authorType === "human") {
       this.options.company.knowledge.upsertCurated({
         key: "strategy:current",
@@ -446,13 +491,6 @@ export class LivingCompanyRuntime {
         title: "Current human goal",
         body: message.text.slice(0, 500)
       });
-    }
-    if (/fail|mistake|don't repeat|do not repeat/i.test(response)) {
-      this.options.company.knowledge.addDoNotRepeat(
-        message.text.slice(0, 200),
-        response.slice(0, 300)
-      );
-      return ["Added do-not-repeat entry"];
     }
     return [];
   }
@@ -468,22 +506,19 @@ export class LivingCompanyRuntime {
     return [`Mode: ${mode}`];
   }
 
-  private auditorScorePending(): string[] {
-    const effects: string[] = [];
-    const done = this.options.company.queue.listDoneUnscored();
-    for (const task of done) {
-      this.options.company.auditor.score(task, {
-        agentId: task.claimedBy ?? "unknown",
-        success: true,
-        scoreOverall: 6,
-        costEfficiency: Math.min(10, 10 / Math.max(task.costActualUsd ?? 0.01, 0.01)),
-        latencyMs: 100,
-        errorRate: 0,
-        rationale: "pending batch score"
-      });
-      effects.push(`Scored ${task.taskId}`);
-    }
-    return effects;
+  /** Brief for the auditor: real details of completed-but-unscored work to judge. */
+  private unscoredTaskBrief(): string {
+    return this.options.company.queue
+      .listDoneUnscored()
+      .slice(0, 5)
+      .map(
+        (t) =>
+          `${t.taskId} [${t.roleRequired}] ${t.title}\n` +
+          `  spec: ${truncate(t.spec, 200)}\n` +
+          `  result: ${truncate(t.result ?? "", 300)}\n` +
+          `  cost: $${(t.costActualUsd ?? 0).toFixed(3)}`
+      )
+      .join("\n");
   }
 
   private breederAutoProposeHeadcount(): string[] {
@@ -551,4 +586,8 @@ export function inferRoleFromText(text: string): Role {
     return "architect";
   }
   return "architect";
+}
+
+function truncate(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max)}…` : text;
 }

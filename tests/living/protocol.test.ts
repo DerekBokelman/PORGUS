@@ -27,4 +27,22 @@ describe("parseProtocol", () => {
     const text = "Done.\n[RESULT] task=T-00001 cost=0.01 body=shipped";
     expect(stripProtocol(text)).toBe("Done.");
   });
+
+  it("parses LESSON tags", () => {
+    const actions = parseProtocol(
+      '[LESSON] trigger="retry storm" body="cap retries at 3 with backoff"'
+    );
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toMatchObject({
+      type: "LESSON",
+      trigger: "retry storm",
+      body: "cap retries at 3 with backoff"
+    });
+  });
+
+  it("parses APPROVE tags", () => {
+    const actions = parseProtocol("[APPROVE] ref=P-1234abcd");
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toMatchObject({ type: "APPROVE", ref: "P-1234abcd" });
+  });
 });

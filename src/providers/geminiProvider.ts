@@ -1,5 +1,5 @@
 import { GoogleGenAI, type Content } from "@google/genai";
-import type { ChatMessage, LlmCompletionInput, LlmProvider } from "../types.js";
+import type { ChatMessage, LlmCompletionInput, LlmCompletionResult, LlmProvider } from "../types.js";
 
 export interface GeminiProviderOptions {
   apiKey: string;
@@ -15,7 +15,7 @@ export class GeminiProvider implements LlmProvider {
     this.model = options.model;
   }
 
-  async complete(input: LlmCompletionInput): Promise<string> {
+  async complete(input: LlmCompletionInput): Promise<LlmCompletionResult> {
     const caveman = input.agent.compressionStyle === "caveman";
     const response = await this.client.models.generateContent({
       model: this.model,
@@ -27,7 +27,16 @@ export class GeminiProvider implements LlmProvider {
       }
     });
 
-    return response.text?.trim() ?? "";
+    const usageMetadata = response.usageMetadata;
+    return {
+      text: response.text?.trim() ?? "",
+      usage: usageMetadata
+        ? {
+            inputTokens: usageMetadata.promptTokenCount ?? 0,
+            outputTokens: usageMetadata.candidatesTokenCount ?? 0
+          }
+        : undefined
+    };
   }
 }
 

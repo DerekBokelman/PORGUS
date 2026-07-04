@@ -1,0 +1,55 @@
+display_information:
+  name: Agent Company — Breeder
+  description: Breeder — one agent in the Agent Company Slack network.
+  background_color: "#1f2937"
+features:
+  bot_user:
+    # display_name is slugified into the @mention handle at first install → @breeder
+    display_name: Breeder
+    always_online: true
+oauth_config:
+  scopes:
+    bot:
+      - app_mentions:read
+      - bookmarks:read
+      - bookmarks:write
+      - channels:history
+      - channels:join
+      - channels:manage
+      - channels:read
+      - chat:write
+      - chat:write.customize
+      - chat:write.public
+      - emoji:read
+      - files:read
+      - files:write
+      - groups:history
+      - groups:read
+      - groups:write
+      - im:history
+      - im:read
+      - im:write
+      - links:read
+      - links:write
+      - mpim:history
+      - mpim:read
+      - mpim:write
+      - pins:read
+      - pins:write
+      - reactions:read
+      - reactions:write
+      - team:read
+      - usergroups:read
+      - usergroups:write
+      - users:read
+      - users:read.email
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention
+      - message.channels
+  interactivity:
+    is_enabled: false
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false

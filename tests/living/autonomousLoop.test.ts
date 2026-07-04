@@ -141,7 +141,7 @@ function fakeResolver() {
     createForAgent(agent: AgentDefinition): LlmProvider {
       return {
         async complete() {
-          return `${agent.displayName} did the work.`;
+          return { text: `${agent.displayName} did the work.` };
         }
       };
     }

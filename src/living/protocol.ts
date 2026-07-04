@@ -17,7 +17,9 @@ export type ProtocolAction =
       proposalId?: string;
     }
   | { type: "VETO"; ref: string; reason: string }
-  | { type: "REVENUE"; source: string; amount: number };
+  | { type: "REVENUE"; source: string; amount: number }
+  | { type: "LESSON"; trigger: string; body: string }
+  | { type: "APPROVE"; ref: string };
 
 const TAG = /\[([A-Z]+)\]\s*([^\[]*)/g;
 
@@ -125,6 +127,18 @@ export function parseProtocol(text: string): ProtocolAction[] {
             source: f.source,
             amount: safeNumber(f.amount, 0)
           });
+        }
+        break;
+      case "LESSON":
+        actions.push({
+          type: "LESSON",
+          trigger: f.trigger ?? f.condition ?? body,
+          body: f.body ?? f.lesson ?? body
+        });
+        break;
+      case "APPROVE":
+        if (f.ref) {
+          actions.push({ type: "APPROVE", ref: f.ref });
         }
         break;
     }
