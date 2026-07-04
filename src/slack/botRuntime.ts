@@ -4,6 +4,7 @@ import type { AgentRegistry } from "../agents/agentRegistry.js";
 import type { AgentResponder, ConversationCoordinator } from "../coordinator/conversationCoordinator.js";
 import type { MemoryStore } from "../memory/memoryStore.js";
 import type { AgentDefinition, ChannelMessage } from "../types.js";
+import { executeSlackTool, parseSlackToolCalls, type SlackClientLike } from "./slackTools.js";
 
 export interface MultiBotRuntimeOptions {
   registry: AgentRegistry | CompositeAgentRegistry;
@@ -55,6 +56,26 @@ export async function startMultiBotRuntime(options: MultiBotRuntimeOptions): Pro
       }
 
       return { ts: response.ts };
+    },
+
+    runAgentTools: async (agent: AgentDefinition, rawText: string, sourceMessage: ChannelMessage) => {
+      const calls = parseSlackToolCalls(rawText);
+      if (calls.length === 0) {
+        return [];
+      }
+      const poster = resolvePoster(options.registry, agent);
+      const app = appsByAgentId.get(poster.appAgentId);
+      if (!app) {
+        return [`Slack tools unavailable: no app for ${poster.appAgentId}`];
+      }
+      const client = app.client as unknown as SlackClientLike;
+      const results: string[] = [];
+      for (const call of calls) {
+        results.push(
+          await executeSlackTool(client, call, { defaultChannelId: sourceMessage.channelId })
+        );
+      }
+      return results;
     }
   };
 

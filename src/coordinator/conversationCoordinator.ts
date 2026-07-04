@@ -20,6 +20,15 @@ export interface AgentResponder {
     sourceMessage: ChannelMessage
   ): Promise<AgentPostResult>;
   resolvePoster?(agent: AgentDefinition): { agentId: string; proxy: boolean };
+  /**
+   * Execute any Slack workspace tool calls the agent embedded in its raw reply.
+   * Returns human-readable status lines (empty if the agent used no tools).
+   */
+  runAgentTools?(
+    agent: AgentDefinition,
+    rawText: string,
+    sourceMessage: ChannelMessage
+  ): Promise<string[]>;
 }
 
 export interface ConversationCoordinatorOptions {
@@ -164,6 +173,19 @@ export class ConversationCoordinator {
           text = turn.responseText.trim();
         }
 
+        let toolNotes: string[] = [];
+        if (responder.runAgentTools) {
+          toolNotes = await responder.runAgentTools(agent, rawText, message);
+          for (const note of toolNotes) {
+            console.log(`[tools] ${agent.id}: ${note}`);
+          }
+        }
+
+        if (toolNotes.length > 0) {
+          const actions = toolNotes.map((note) => `\u2022 ${note}`).join("\n");
+          text = text ? `${text}\n\n_Actions:_\n${actions}` : `_Actions:_\n${actions}`;
+        }
+
         if (!text) {
           continue;
         }
@@ -280,6 +302,21 @@ export class ConversationCoordinator {
           "How work gets done:",
           "- The system automatically assigns you a task from the queue and marks it done when you finish — you do not need to manage that.",
           "- Just focus on producing the actual work product for the task in your reply.",
+          "",
+          "You can shape the Slack workspace yourself. When you genuinely want to take an action,",
+          "add a [SLACK] tag on its own line at the END of your message. Use only when it helps; never spam them.",
+          "  [SLACK] action=create_channel name=growth-experiments topic=\"Where we test ideas\"",
+          "  [SLACK] action=set_topic channel=<id> topic=<text>   (defaults to this channel if omitted)",
+          "  [SLACK] action=set_purpose channel=<id> purpose=<text>",
+          "  [SLACK] action=rename_channel channel=<id> name=<new-name>",
+          "  [SLACK] action=invite channel=<id> users=<U123,U456>",
+          "  [SLACK] action=post channel=<id> text=<message>",
+          "  [SLACK] action=pin channel=<id> timestamp=<ts>",
+          "  [SLACK] action=react channel=<id> timestamp=<ts> emoji=rocket",
+          "  [SLACK] action=bookmark channel=<id> title=<t> link=<url>",
+          "  [SLACK] action=list_channels",
+          "- Need a capability or tool you don't have yet? Ask for it with: [SLACK] action=request_capability name=<tool> reason=<why>",
+          "- Keep your written message natural; the tags are executed and summarized automatically.",
           this.options.livingRuntime?.buildAgentContext(agent) ?? ""
         ]
           .filter(Boolean)

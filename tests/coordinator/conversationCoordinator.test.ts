@@ -30,6 +30,43 @@ describe("ConversationCoordinator", () => {
     expect(posts).toEqual(["Architect: Architect response", "Auditor: Auditor response"]);
   });
 
+  it("runs agent tool calls and appends their results to the posted message", async () => {
+    const memory = new InMemoryMemoryStore();
+    const registry = makeRegistry([makeAgent("architect", "Architect", "mock")], {
+      maxConsecutiveAgentTurns: 1
+    });
+    const coordinator = new ConversationCoordinator({
+      registry,
+      memory,
+      budgetGuard: new BudgetGuard(memory, 10),
+      providerResolver: {
+        createForAgent(agent: AgentDefinition): LlmProvider {
+          return {
+            async complete() {
+              return `Organizing us.\n[SLACK] action=create_channel name=growth`;
+            }
+          };
+        }
+      }
+    });
+    const source = await recordHuman(memory, "Architect, set us up.");
+    const posts: string[] = [];
+
+    await coordinator.handleMessage(source, {
+      async postAgentMessage(_agent, text) {
+        posts.push(text);
+        return { ts: `agent-${posts.length}` };
+      },
+      async runAgentTools(_agent, rawText) {
+        return rawText.includes("create_channel") ? ["Created channel #growth"] : [];
+      }
+    });
+
+    expect(posts).toHaveLength(1);
+    expect(posts[0]).toContain("Organizing us.");
+    expect(posts[0]).toContain("Created channel #growth");
+  });
+
   it("blocks real providers when the daily budget is exhausted", async () => {
     const memory = new InMemoryMemoryStore();
     const registry = makeRegistry([makeAgent("architect", "Architect", "gemini")], {
