@@ -15,7 +15,7 @@ describe("AgentRegistry", () => {
       "chronicler"
     ]);
     expect(agents).toHaveLength(5);
-    expect(agents.every((agent) => agent.compressionStyle === "caveman")).toBe(true);
+    expect(agents.every((agent) => agent.compressionStyle === "normal")).toBe(true);
     expect(registry.getRequired("architect").provider).toBe("gemini");
     expect(registry.getRequired("auditor").provider).toBe("groq");
     expect(registry.getRequired("operator").provider).toBe("openrouter");

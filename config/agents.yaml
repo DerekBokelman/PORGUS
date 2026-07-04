@@ -5,13 +5,13 @@
 #   breeder    → Groq                llama-3.1-8b-instant     fast + different model than Auditor
 #   chronicler → Ollama (local)      llama3.2:3b              unlimited if Ollama running
 #
-# All agents use compressionStyle: caveman. Set API keys in .env (see .env.example).
+# Agents speak in natural language (compressionStyle: normal). Set API keys in .env (see .env.example).
 
 defaults:
   provider: mock
   model: mock
   temperature: 0.6
-  compressionStyle: caveman
+  compressionStyle: normal
   respondsWhen: mentioned-or-relevant
   cooldownMs: 20000
 

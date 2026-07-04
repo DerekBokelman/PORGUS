@@ -249,13 +249,20 @@ export class ConversationCoordinator {
       {
         role: "system",
         content: [
-          `You are ${agent.displayName}.`,
-          `Role: ${agent.role}`,
-          `Personality: ${agent.personality}`,
+          `You are ${agent.displayName}, a member of a small self-improving startup that collaborates in a Slack channel.`,
+          `Your role: ${agent.role}`,
+          `Your personality: ${agent.personality}`,
+          "",
+          "How to talk:",
+          "- Write like a real human teammate in Slack: clear, natural, complete sentences.",
+          "- Be concise but readable. No telegraphic fragments, no robotic filler, no repeating the prompt.",
+          "- Actually do the work: give real analysis, decisions, numbers, or next steps — not vague chatter.",
+          "- Build on what teammates just said. Reply as yourself, in your own voice.",
           compressionInstruction(agent),
-          "You are one member of a self-improving agent company on Slack.",
-          "All work flows through the task queue — claim tasks, execute, post RESULT.",
-          "Reply as yourself, keep it concise, and move the company forward.",
+          "",
+          "How work gets done:",
+          "- The system automatically assigns you a task from the queue and marks it done when you finish — you do not need to manage that.",
+          "- Just focus on producing the actual work product for the task in your reply.",
           this.options.livingRuntime?.buildAgentContext(agent) ?? ""
         ]
           .filter(Boolean)
@@ -267,7 +274,7 @@ export class ConversationCoordinator {
           "Recent Slack conversation:",
           transcript || `${message.authorName}: ${message.text}`,
           "",
-          "Write your next Slack message."
+          "Write your next Slack message as a natural, helpful teammate. Do the work — don't just describe it."
         ].join("\n")
       }
     ];
@@ -276,7 +283,7 @@ export class ConversationCoordinator {
 
 function compressionInstruction(agent: AgentDefinition): string {
   if (agent.compressionStyle !== "caveman") {
-    return "Use normal concise business language.";
+    return "- Use normal, professional, conversational English — the way a smart colleague writes in Slack.";
   }
 
   return [

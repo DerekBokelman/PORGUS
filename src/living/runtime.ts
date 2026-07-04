@@ -148,25 +148,21 @@ export class LivingCompanyRuntime {
       .join("\n");
 
     return [
-      "LIVING COMPANY STATE",
-      `Mode: ${mode} | Spend ceiling remaining: $${company.ledger.remainingCeilingUsd().toFixed(2)}`,
-      `Headcount: ${headcount.activeAgentCount()}/${state.activeSlotLimit} (human max ${state.humanMaxSlots})`,
+      "--- Company status (for your awareness) ---",
+      `Budget mode: ${mode} | Spend ceiling remaining: $${company.ledger.remainingCeilingUsd().toFixed(2)}`,
+      `Team size: ${headcount.activeAgentCount()}/${state.activeSlotLimit} (human max ${state.humanMaxSlots})`,
       `Open tasks:\n${openTasks || "none"}`,
-      curated ? `Curated knowledge:\n${curated}` : "",
-      scoreboard ? `Scoreboard:\n${scoreboard}` : "",
+      curated ? `Team knowledge:\n${curated}` : "",
+      scoreboard ? `Performance scoreboard:\n${scoreboard}` : "",
       pending ? `Pending proposals:\n${pending}` : "",
       "",
-      "PROTOCOL (use tags in your reply when acting):",
-      "[TASK] role=architect cap=0.25 title=... spec=...",
-      "[CLAIM] task=T-EXAMPLE",
-      "[RESULT] task=T-EXAMPLE cost=0.01 body=...",
-      "[SCORE] task=T-EXAMPLE overall=7 cost_eff=6 rationale=...",
-      "[PROPOSAL] kind=headcount slots=1 reason=...",
-      "[PROPOSAL] kind=agent id=researcher display=Researcher role=... personality=... reason=...",
-      "[VETO] ref=P-abc reason=...",
-      "[REVENUE] source=content amount=10",
-      "",
-      `Your agent id: ${agent.id}. Claim open tasks for your role before working.`
+      "Optional structured actions: you may end your message with ONE of these tags only when you",
+      "genuinely want that action taken. Otherwise omit them entirely — never invent IDs or copy examples.",
+      "  [TASK] role=<role> cap=<usd> title=<short> spec=<details>   (propose new work for a role)",
+      "  [PROPOSAL] kind=headcount slots=1 reason=<why>              (ask to grow the team)",
+      "  [REVENUE] source=<name> amount=<usd>                        (log real income)",
+      "Do NOT emit [CLAIM], [RESULT], [SCORE], or [VETO] — the system handles those automatically.",
+      "Write your actual message in plain language first; a tag is optional and comes last."
     ]
       .filter(Boolean)
       .join("\n");

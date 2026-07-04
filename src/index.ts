@@ -81,7 +81,7 @@ async function main() {
   const hc = headcount.state();
   console.log("Agent providers (free tier):");
   for (const agent of registry.list()) {
-    console.log(`  ${agent.displayName}: ${agent.provider}/${agent.model} [caveman]`);
+    console.log(`  ${agent.displayName}: ${agent.provider}/${agent.model} [${agent.compressionStyle}]`);
   }
   console.log(
     `Agent Company running. Mode: ${company.ledger.mode()} | ` +

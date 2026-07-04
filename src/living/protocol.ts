@@ -36,6 +36,16 @@ function parseRole(value: string | undefined): Role | null {
   return roles.includes(value as Role) ? (value as Role) : null;
 }
 
+/** Parse a numeric field, tolerating junk like "0.25usd"; falls back when unusable. */
+function safeNumber(value: string | undefined, fallback: number): number {
+  if (value === undefined) {
+    return fallback;
+  }
+  const match = value.match(/-?\d+(\.\d+)?/);
+  const parsed = match ? Number(match[0]) : NaN;
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 export function parseProtocol(text: string): ProtocolAction[] {
   const actions: ProtocolAction[] = [];
   TAG.lastIndex = 0;
@@ -51,13 +61,14 @@ export function parseProtocol(text: string): ProtocolAction[] {
         if (!role) {
           break;
         }
+        const cap = safeNumber(f.cap ?? f.budget, 0.25);
         actions.push({
           type: "TASK",
           role,
-          cap: Number(f.cap ?? f.budget ?? "0.25"),
+          cap: cap > 0 ? cap : 0.25,
           title: f.title ?? "Untitled task",
           spec: f.spec ?? f.body ?? body,
-          priority: f.priority ? Number(f.priority) : undefined
+          priority: f.priority ? safeNumber(f.priority, 3) : undefined
         });
         break;
       }
@@ -71,7 +82,7 @@ export function parseProtocol(text: string): ProtocolAction[] {
           actions.push({
             type: "RESULT",
             taskId: f.task,
-            cost: Number(f.cost ?? "0.01"),
+            cost: safeNumber(f.cost, 0.01),
             body: f.body ?? body
           });
         }
@@ -81,8 +92,8 @@ export function parseProtocol(text: string): ProtocolAction[] {
           actions.push({
             type: "SCORE",
             taskId: f.task,
-            overall: Number(f.overall ?? f.score ?? "5"),
-            costEff: Number(f.cost_eff ?? f.costEff ?? "5"),
+            overall: safeNumber(f.overall ?? f.score, 5),
+            costEff: safeNumber(f.cost_eff ?? f.costEff, 5),
             rationale: f.rationale ?? f.reason ?? "scored"
           });
         }
@@ -92,7 +103,7 @@ export function parseProtocol(text: string): ProtocolAction[] {
         actions.push({
           type: "PROPOSAL",
           kind,
-          slots: f.slots ? Number(f.slots) : 1,
+          slots: f.slots ? safeNumber(f.slots, 1) : 1,
           reason: f.reason ?? body,
           agentId: f.id ?? f.agentId,
           displayName: f.display ?? f.displayName,
@@ -112,7 +123,7 @@ export function parseProtocol(text: string): ProtocolAction[] {
           actions.push({
             type: "REVENUE",
             source: f.source,
-            amount: Number(f.amount)
+            amount: safeNumber(f.amount, 0)
           });
         }
         break;
