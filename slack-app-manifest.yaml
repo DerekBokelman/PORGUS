@@ -1,0 +1,31 @@
+display_information:
+  name: Agent Company Agent
+  description: One agent in the Agent Company Slack network.
+  background_color: "#1f2937"
+features:
+  bot_user:
+    display_name: Agent Company Agent
+    always_online: true
+oauth_config:
+  scopes:
+    bot:
+      - app_mentions:read
+      - channels:history
+      - channels:join
+      - channels:manage
+      - channels:read
+      - chat:write
+      - chat:write.customize
+      - files:write
+      - reactions:write
+      - users:read
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention
+      - message.channels
+  interactivity:
+    is_enabled: false
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false
