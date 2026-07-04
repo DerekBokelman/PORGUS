@@ -10,19 +10,21 @@ Agent Company is an event-driven Slack network of configurable agents. Each agen
 - Stores recent channel context and daily real-model usage in SQLite.
 - Supports per-agent providers: `mock`, `gemini`, `groq`, `openrouter`, and `ollama`.
 - Supports per-agent response compression: `normal` or `caveman`.
-- Enforces a daily real-call limit from `config/agents.yaml` (45/day across all providers).
+- Enforces a daily real-call limit from `config/agents.yaml` (200/day across all providers).
 
-## Free-tier model map (default)
+## Free-tier model map (current)
 
 Each agent uses a **different free provider** so quotas do not all hit one API:
 
 | Agent | Provider | Model | Get a key |
 |---|---|---|---|
-| Architect | Gemini | `gemini-2.5-flash` | [Google AI Studio](https://aistudio.google.com/app/apikey) |
+| Architect | OpenRouter | `openrouter/free` | [OpenRouter](https://openrouter.ai/keys) |
 | Auditor | Groq | `llama-3.3-70b-versatile` | [Groq Console](https://console.groq.com/keys) |
-| Operator | OpenRouter | `meta-llama/llama-3.3-70b-instruct:free` | [OpenRouter](https://openrouter.ai/keys) |
+| Operator | OpenRouter | `openrouter/free` | same OpenRouter key |
 | Breeder | Groq | `llama-3.1-8b-instant` | same Groq key |
 | Chronicler | Ollama | `llama3.2:3b` | [Ollama](https://ollama.com/download) — run `ollama pull llama3.2:3b` |
+
+Architect moved off Gemini after free-tier daily quota exhaustion. `GEMINI_API_KEY` remains in `.env.example` if you switch back in `config/agents.yaml`.
 
 Verify all providers:
 
@@ -78,12 +80,17 @@ Fill in the Slack values for each agent:
 
 Free provider keys (see table above):
 
-- `GEMINI_API_KEY` — Architect
+- `OPENROUTER_API_KEY` — Architect + Operator
 - `GROQ_API_KEY` — Auditor + Breeder
-- `OPENROUTER_API_KEY` — Operator
 - `OLLAMA_BASE_URL` — Chronicler (default `http://localhost:11434`)
+- `GEMINI_API_KEY` — optional if you set an agent back to Gemini
 
-Rate limiting: `LLM_MIN_INTERVAL_MS=13000` protects Gemini's 5 RPM cap; Groq/OpenRouter use faster per-provider limits automatically.
+Rate limiting: `LLM_MIN_INTERVAL_MS=13000` protects Gemini's 5 RPM cap when used; Groq/OpenRouter/Ollama use faster per-provider limits in `src/providers/providerFactory.ts`.
+
+Autonomous cadence (when `LIVING_HEARTBEAT=true`):
+
+- `LIVING_TICK_MIN_MS=1500` — seconds-scale group chat while agents are active
+- `LIVING_TICK_MS=90000` — backoff when idle
 
 ## Editing Agents
 
@@ -106,10 +113,11 @@ All agents default to `compressionStyle: caveman`. Real models get shorter max o
 
 In `config/agents.yaml`:
 
-- `budget.dailyRealCallLimit`: maximum real model calls per day across all agents (default 45).
-- `coordination.maxConsecutiveAgentTurns`: stops agent-to-agent loops until a human speaks again.
+- `budget.dailyRealCallLimit`: maximum real model calls per day across all agents (default 200).
+- `coordination.maxConsecutiveAgentTurns`: stops agent-to-agent loops until a human speaks again (default 5).
 - `coordination.maxResponsesPerMessage`: caps how many agents answer one message.
-- `coordination.responseDelayMs`: spaces Slack replies for readability.
+- `coordination.responseDelayMs`: delay between Slack replies (default 0 for fast cadence).
+- `defaults.cooldownMs`: minimum time before the same agent replies again (default 400).
 
 Spread agents across providers (see free-tier table) so one API's daily cap does not stop the whole company.
 
@@ -173,6 +181,19 @@ Then post in the shared Slack channel. The Architect starts by default, and the 
 ```bash
 bun run test
 ```
+
+## Hand off to another AI agent
+
+For Claude Code, Cursor, or any coding agent picking up this repo:
+
+1. Read **[`CLAUDE.md`](./CLAUDE.md)** — architecture, Slack app IDs, known issues, env vars, branch state.
+2. Copy **[`.env.example`](./.env.example)** → `.env` and fill secrets (never commit `.env`).
+3. Run `bun run check-providers` then `bun run dev`.
+4. Work on branch **`cursor/living-company-multi-provider`** (or merge to `main` first).
+
+**Slack note:** bot display names (Architect, Auditor, …) differ from legacy workspace `@handles` (`@ceo`, `@researcher`, …). Reinstall does not change @handles; see `CLAUDE.md` for details.
+
+Cursor also loads **[`AGENTS.md`](./AGENTS.md)** and **`.cursor/rules/agent-company.mdc`** for short project context.
 
 ## Project Structure
 

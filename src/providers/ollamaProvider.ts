@@ -1,4 +1,4 @@
-import type { ChatMessage, LlmCompletionInput, LlmProvider } from "../types.js";
+import type { ChatMessage, LlmCompletionInput, LlmCompletionResult, LlmProvider } from "../types.js";
 
 interface OllamaProviderOptions {
   baseUrl: string;
@@ -9,13 +9,15 @@ interface OllamaResponse {
   message?: {
     content?: string;
   };
+  prompt_eval_count?: number;
+  eval_count?: number;
   error?: string;
 }
 
 export class OllamaProvider implements LlmProvider {
   constructor(private readonly options: OllamaProviderOptions) {}
 
-  async complete(input: LlmCompletionInput): Promise<string> {
+  async complete(input: LlmCompletionInput): Promise<LlmCompletionResult> {
     const caveman = input.agent.compressionStyle === "caveman";
     const response = await fetch(`${this.options.baseUrl.replace(/\/$/, "")}/api/chat`, {
       method: "POST",
@@ -39,7 +41,13 @@ export class OllamaProvider implements LlmProvider {
       throw new Error(body.error ?? `Ollama provider failed: ${response.status}`);
     }
 
-    return body.message?.content?.trim() ?? "";
+    return {
+      text: body.message?.content?.trim() ?? "",
+      usage:
+        body.prompt_eval_count !== undefined && body.eval_count !== undefined
+          ? { inputTokens: body.prompt_eval_count, outputTokens: body.eval_count }
+          : undefined
+    };
   }
 }
 

@@ -1,4 +1,4 @@
-import type { LlmCompletionInput, LlmProvider } from "../types.js";
+import type { LlmCompletionInput, LlmCompletionResult, LlmProvider } from "../types.js";
 
 export class RateLimitedProvider implements LlmProvider {
   private nextAvailableAt = 0;
@@ -9,7 +9,7 @@ export class RateLimitedProvider implements LlmProvider {
     private readonly minIntervalMs: number
   ) {}
 
-  async complete(input: LlmCompletionInput): Promise<string> {
+  async complete(input: LlmCompletionInput): Promise<LlmCompletionResult> {
     const run = this.queue.then(async () => {
       const waitMs = Math.max(0, this.nextAvailableAt - Date.now());
 

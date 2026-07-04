@@ -1,4 +1,4 @@
-import type { ChatMessage, LlmCompletionInput, LlmProvider } from "../types.js";
+import type { ChatMessage, LlmCompletionInput, LlmCompletionResult, LlmProvider } from "../types.js";
 
 interface OpenAiCompatibleProviderOptions {
   apiKey: string;
@@ -15,6 +15,10 @@ interface ChatCompletionResponse {
       content?: string;
     };
   }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+  };
   error?: {
     message?: string;
     metadata?: {
@@ -28,7 +32,7 @@ const MAX_RATE_LIMIT_RETRIES = 3;
 export class OpenAiCompatibleProvider implements LlmProvider {
   constructor(private readonly options: OpenAiCompatibleProviderOptions) {}
 
-  async complete(input: LlmCompletionInput): Promise<string> {
+  async complete(input: LlmCompletionInput): Promise<LlmCompletionResult> {
     const caveman = input.agent.compressionStyle === "caveman";
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.options.apiKey}`,
@@ -58,7 +62,15 @@ export class OpenAiCompatibleProvider implements LlmProvider {
       const body = (await response.json()) as ChatCompletionResponse;
 
       if (response.ok) {
-        return body.choices?.[0]?.message?.content?.trim() ?? "";
+        return {
+          text: body.choices?.[0]?.message?.content?.trim() ?? "",
+          usage: body.usage
+            ? {
+                inputTokens: body.usage.prompt_tokens ?? 0,
+                outputTokens: body.usage.completion_tokens ?? 0
+              }
+            : undefined
+        };
       }
 
       if (response.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES) {

@@ -3,13 +3,16 @@ import { AgentRegistry } from "./agents/agentRegistry.js";
 import { CompositeAgentRegistry } from "./agents/compositeRegistry.js";
 import { loadConfig } from "./config/env.js";
 import { ConversationCoordinator } from "./coordinator/conversationCoordinator.js";
+import { AutonomousLoop } from "./living/autonomousLoop.js";
 import { bootstrapLivingCompany } from "./living/bootstrap.js";
+import { AgentToolRunner } from "./tools/toolRunner.js";
 import { HeadcountManager } from "./living/headcount.js";
 import { LivingCompanyRuntime } from "./living/runtime.js";
 import { SqliteLivingStore } from "./living/sqliteLivingStore.js";
 import { BudgetGuard } from "./memory/budgetGuard.js";
 import { SqliteMemoryStore } from "./memory/sqliteMemoryStore.js";
 import { ProviderFactory } from "./providers/providerFactory.js";
+import { ensureSlackAgentsReady } from "./slack/slackSetup.js";
 import { startMultiBotRuntime } from "./slack/botRuntime.js";
 
 async function main() {
@@ -40,15 +43,19 @@ async function main() {
   const providerFactory = new ProviderFactory({
     fallbackToMock: process.env.FALLBACK_TO_MOCK === "true"
   });
+  const toolRunner = new AgentToolRunner(livingRuntime);
   const coordinator = new ConversationCoordinator({
     registry,
     memory,
     budgetGuard,
     providerResolver: providerFactory,
-    livingRuntime
+    livingRuntime,
+    toolRunner
   });
 
+  let autonomousLoop: AutonomousLoop | undefined;
   const halt = (signal: string) => {
+    autonomousLoop?.stop();
     company.hardRules.killSwitch.halt();
     console.log(`\nKill switch engaged (${signal}). Halting agent execution.`);
     process.exit(0);
@@ -56,7 +63,26 @@ async function main() {
   process.on("SIGINT", () => halt("SIGINT"));
   process.on("SIGTERM", () => halt("SIGTERM"));
 
-  await startMultiBotRuntime({
+  const channelId = process.env.SLACK_CHANNEL_ID;
+  const slackStatus = await ensureSlackAgentsReady(registry, process.env, channelId);
+  for (const row of slackStatus) {
+    const join = row.joinOk === false ? ` join=${row.joinError}` : "";
+    const handleNote =
+      row.slackUser && row.handleMismatch
+        ? ` (posts as ${row.displayName}; @mention still @${row.slackUser} — Slack locks bot handle at create)`
+        : row.slackUser && row.slackUser !== row.agentId
+          ? ` (slack:@${row.slackUser})`
+          : row.slackUser
+            ? ` (@${row.slackUser})`
+            : "";
+    console.log(
+      row.authOk
+        ? `Slack OK: ${row.displayName}${handleNote}${join}`
+        : `Slack FAIL: ${row.displayName} — ${row.error ?? "unknown"}`
+    );
+  }
+
+  const { responder } = await startMultiBotRuntime({
     registry,
     memory,
     coordinator
@@ -65,13 +91,33 @@ async function main() {
   const hc = headcount.state();
   console.log("Agent providers (free tier):");
   for (const agent of registry.list()) {
-    console.log(`  ${agent.displayName}: ${agent.provider}/${agent.model} [caveman]`);
+    console.log(`  ${agent.displayName}: ${agent.provider}/${agent.model} [${agent.compressionStyle}]`);
   }
   console.log(
     `Agent Company running. Mode: ${company.ledger.mode()} | ` +
       `Spend ceiling $${config.livingSpendCeilingUsd} | ` +
       `Headcount ${headcount.activeAgentCount()}/${hc.activeSlotLimit} (max ${hc.humanMaxSlots})`
   );
+
+  if (config.livingHeartbeatEnabled) {
+    if (!channelId) {
+      console.log(
+        "Heartbeat disabled: set SLACK_CHANNEL_ID so autonomous work cycles have a channel to post to."
+      );
+    } else {
+      autonomousLoop = new AutonomousLoop({
+        coordinator,
+        responder,
+        channelId,
+        busyIntervalMs: config.livingTickBusyMs,
+        idleIntervalMs: config.livingTickIdleMs,
+        startDelayMs: 1500
+      });
+      autonomousLoop.start();
+    }
+  } else {
+    console.log("Heartbeat disabled (LIVING_HEARTBEAT=false). Agents act only on Slack messages.");
+  }
 }
 
 main().catch((error) => {

@@ -4,14 +4,16 @@ import type { AgentDefinition } from "../../src/types.js";
 
 describe("MockProvider", () => {
   it("returns a role-flavored response without network access", async () => {
-    const response = await new MockProvider().complete({
+    const { text, usage } = await new MockProvider().complete({
       agent: makeAgent(),
       messages: [{ role: "user", content: "We need a launch plan." }]
     });
 
-    expect(response).toContain("Mock Auditor");
-    expect(response).toContain("Benchmarks");
-    expect(response).toContain("launch plan");
+    expect(text).toContain("Mock Auditor");
+    expect(text).toContain("Benchmarks");
+    expect(text).toContain("launch plan");
+    expect(usage?.inputTokens).toBeGreaterThan(0);
+    expect(usage?.outputTokens).toBeGreaterThan(0);
   });
 });
 

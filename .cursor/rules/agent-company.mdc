@@ -1,0 +1,33 @@
+---
+description: Agent Company project context for coding assistants
+alwaysApply: true
+---
+
+# Agent Company
+
+Multi-agent Slack Living Company. Bun + TypeScript + SQLite. Five bots in one process.
+
+## Before editing
+
+Read `CLAUDE.md` for full handoff (Slack app IDs, known bugs, env vars).
+
+## Current config (do not assume README defaults)
+
+- Branch: `cursor/living-company-multi-provider`
+- Architect → `openrouter` / `openrouter/free` (not Gemini)
+- Budget: `dailyRealCallLimit: 200` in `config/agents.yaml`
+- Coordination: `cooldownMs: 400`, `responseDelayMs: 0`, `maxConsecutiveAgentTurns: 5`
+- `.env` uses `dotenv.config({ override: true })` in `src/config/env.ts`
+
+## Key paths
+
+- `config/agents.yaml` — agents, providers, budget
+- `src/slack/slackTools.ts` — channel ID resolve, join, activeChannelId
+- `src/coordinator/conversationCoordinator.ts` — loop guards
+- `src/living/` — task queue, heartbeat, autonomous loop
+
+## Never
+
+- Commit `.env` or secrets
+- Expose tokens in chat
+- Assume Slack @handles match display names (legacy @ceo etc.)

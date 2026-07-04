@@ -1,11 +1,11 @@
 # Free-tier model map (one provider per core agent — spreads API quotas):
-#   architect  → Gemini AI Studio   gemini-2.5-flash        free tier (AI Studio key)
+#   architect  → OpenRouter          openrouter/free          auto-routes free models
 #   auditor    → Groq                llama-3.3-70b-versatile  ~1,000 req/day, 30 RPM
-#   operator   → OpenRouter          llama-3.3-70b-instruct:free  ~50 req/day (200 w/ usage)
-#   breeder    → Groq                llama-3.1-8b-instant     fast + different model than Auditor
+#   operator   → OpenRouter          openrouter/free          same key as Architect
+#   breeder    → Groq                llama-4-maverick         smart + MUST differ from Auditor's model (hard rule 4)
 #   chronicler → Ollama (local)      llama3.2:3b              unlimited if Ollama running
 #
-# All agents use compressionStyle: caveman. Set API keys in .env (see .env.example).
+# Agents always speak in caveman compression (compressionStyle: caveman). Set API keys in .env (see .env.example).
 
 defaults:
   provider: mock
@@ -13,25 +13,25 @@ defaults:
   temperature: 0.6
   compressionStyle: caveman
   respondsWhen: mentioned-or-relevant
-  cooldownMs: 20000
+  cooldownMs: 150
 
 budget:
-  dailyRealCallLimit: 45
+  dailyRealCallLimit: 500
 
 coordination:
-  maxConsecutiveAgentTurns: 3
-  responseDelayMs: 1500
-  maxResponsesPerMessage: 1
+  maxConsecutiveAgentTurns: 8
+  responseDelayMs: 0
+  maxResponsesPerMessage: 2
   recentMessageLimit: 12
 
 agents:
   - id: architect
     displayName: Architect
-    provider: gemini
-    model: gemini-2.5-flash
+    provider: openrouter
+    model: openrouter/free
     respondsWhen: always
-    personality: Cautious, opinionated, allergic to complexity, and quick to say no. Thinks in interfaces, failure modes, and deletion before addition.
-    role: "Designs and builds the agent infrastructure: orchestration, message passing, memory systems, hiring and firing mechanics, and the frameworks the other agents live inside."
+    personality: Decisive, ambitious, allergic to bureaucracy. Thinks in big plans and failure modes; delegates fast, unblocks others, and never schedules a meeting when a task assignment will do.
+    role: "Owns the big picture: sets broad ambitious plans, breaks them into concrete role-assigned tasks, delegates immediately, and builds the infrastructure the other agents live inside."
     slack:
       botTokenEnv: SLACK_ARCHITECT_BOT_TOKEN
       appTokenEnv: SLACK_ARCHITECT_APP_TOKEN
@@ -69,7 +69,7 @@ agents:
   - id: operator
     displayName: Operator
     provider: openrouter
-    model: meta-llama/llama-3.3-70b-instruct:free
+    model: openrouter/free
     personality: Pragmatic, impatient, ROI-obsessed, and focused on unit economics. Says when clever work does not pay for itself.
     role: "Manages revenue and resources: tracks burn rate, API cost, compute cost, income opportunities, budget allocation, and throttles expensive agents when needed."
     slack:
@@ -89,7 +89,7 @@ agents:
   - id: breeder
     displayName: Breeder
     provider: groq
-    model: llama-3.1-8b-instant
+    model: meta-llama/llama-4-maverick-17b-128e-instruct
     temperature: 0.8
     personality: Creative, experimental, slightly reckless, and unattached to ideas. Comfortable with a 90% failure rate because the Auditor filters output.
     role: "Creates and mutates agents: drafts new agent specs, prompts, model choices, toolsets, and variants of existing agents for the Auditor to test."

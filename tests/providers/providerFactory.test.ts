@@ -11,7 +11,7 @@ describe("ProviderFactory", () => {
         agent: makeAgent(),
         messages: [{ role: "user", content: "Hello" }]
       })
-    ).resolves.toContain("Mock Architect");
+    ).resolves.toMatchObject({ text: expect.stringContaining("Mock Architect") });
   });
 
   it("requires provider-specific keys for real providers", () => {

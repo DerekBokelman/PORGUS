@@ -75,6 +75,16 @@ export interface LlmCompletionInput {
   temperature?: number;
 }
 
+export interface LlmUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
+export interface LlmCompletionResult {
+  text: string;
+  usage?: LlmUsage;
+}
+
 export interface LlmProvider {
-  complete(input: LlmCompletionInput): Promise<string>;
+  complete(input: LlmCompletionInput): Promise<LlmCompletionResult>;
 }
